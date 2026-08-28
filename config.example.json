@@ -1,0 +1,35 @@
+{
+  "profile": "peg",
+  "paths": {
+    "raw_pdfs": "data/raw_pdfs",
+    "tei": "data/tei",
+    "paper_json": "data/paper_json",
+    "llm_raw": "data/llm_raw",
+    "extracted": "data/extracted",
+    "database": "db/literature.sqlite",
+    "manifest": "data/manifest.csv",
+    "review_reports": "outputs/review_reports",
+    "review_queue": "outputs/review_queue.csv"
+  },
+  "grobid": {
+    "base_url": "http://127.0.0.1:8070",
+    "timeout_seconds": 900,
+    "attempts": 4,
+    "retry_wait_seconds": 5,
+    "consolidate_header": 0,
+    "consolidate_citations": 0
+  },
+  "llm": {
+    "base_url": "http://127.0.0.1:8080/v1",
+    "api_key": "no-key",
+    "model": "auto",
+    "temperature": 0.0,
+    "max_tokens": 8192,
+    "timeout_seconds": 1200,
+    "enable_thinking": false,
+    "response_format": "json_schema",
+    "chunk_max_chars": 30000,
+    "attempts": 3,
+    "retry_wait_seconds": 5
+  }
+}

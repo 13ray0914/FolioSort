@@ -1,0 +1,8 @@
+Title / DOI / journal / year are correct
+PEG/OEG/PEO systems and chain lengths are correct
+Mn / Mw / dispersity / end groups are correct where relevant
+Important experimental conditions are preserved
+Numerical values and units match the PDF
+Claims are supported by the cited sentence IDs
+Literature summaries are not mislabeled as this paper's own results
+Important conclusions were not missed

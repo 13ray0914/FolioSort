@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PEG paper inventory chunk",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["article_type", "objectives", "systems", "methods", "studied_properties", "global_conditions"],
+  "properties": {
+    "article_type": {
+      "type": "string",
+      "enum": ["primary_research", "review", "perspective", "methods", "theory", "other", "unclear"]
+    },
+    "objectives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "evidence_sids"],
+        "properties": {
+          "text": {"type": "string"},
+          "evidence_sids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "systems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["system_name_raw", "system_type", "normalized_name", "attributes", "evidence_sids"],
+        "properties": {
+          "system_name_raw": {"type": "string"},
+          "system_type": {"type": "string"},
+          "normalized_name": {"type": "string"},
+          "attributes": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["peg_family", "dp_raw", "dp_min", "dp_max", "mn_raw", "mw_raw", "dispersity_raw", "end_groups", "topology", "architecture", "monodispersity_status", "other_descriptors"],
+            "properties": {
+              "peg_family": {"type": ["string", "null"]},
+              "dp_raw": {"type": ["string", "null"]},
+              "dp_min": {"type": ["number", "null"]},
+              "dp_max": {"type": ["number", "null"]},
+              "mn_raw": {"type": ["string", "null"]},
+              "mw_raw": {"type": ["string", "null"]},
+              "dispersity_raw": {"type": ["string", "null"]},
+              "end_groups": {"type": "array", "items": {"type": "string"}},
+              "topology": {"type": ["string", "null"]},
+              "architecture": {"type": ["string", "null"]},
+              "monodispersity_status": {"type": ["string", "null"]},
+              "other_descriptors": {"type": "array", "items": {"type": "string"}}
+            }
+          },
+          "evidence_sids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "methods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["method_raw", "method_normalized", "target_property", "evidence_sids"],
+        "properties": {
+          "method_raw": {"type": "string"},
+          "method_normalized": {"type": "string"},
+          "target_property": {"type": ["string", "null"]},
+          "evidence_sids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "studied_properties": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["property_raw", "property_normalized", "evidence_sids"],
+        "properties": {
+          "property_raw": {"type": "string"},
+          "property_normalized": {"type": "string"},
+          "evidence_sids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "global_conditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["condition_type", "value_raw", "evidence_sids"],
+        "properties": {
+          "condition_type": {"type": "string"},
+          "value_raw": {"type": "string"},
+          "evidence_sids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

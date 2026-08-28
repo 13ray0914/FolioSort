@@ -1,0 +1,33 @@
+{
+  "include_validation_status": ["pass", "review_required"],
+  "semantic": {
+    "top_k_per_paper": 6,
+    "min_similarity": 0.10,
+    "max_features": 30000,
+    "ngram_max": 2
+  },
+  "bibliographic_coupling": {
+    "top_k_per_paper": 5,
+    "min_shared_references": 2,
+    "min_similarity": 0.08
+  },
+  "tag_similarity": {
+    "top_k_per_paper": 5,
+    "min_jaccard": 0.25
+  },
+  "weights": {
+    "semantic": 0.55,
+    "direct_citation": 1.20,
+    "bibliographic_coupling": 0.35,
+    "tag_similarity": 0.30
+  },
+  "clustering": {
+    "resolution": 1.0,
+    "seed": 42
+  },
+  "gui": {
+    "physics": true,
+    "initial_node_scale": 1.0,
+    "max_claims_in_panel": 5
+  }
+}

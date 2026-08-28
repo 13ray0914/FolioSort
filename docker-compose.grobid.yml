@@ -1,0 +1,8 @@
+services:
+  grobid:
+    image: grobid/grobid:0.9.1-full
+    ports:
+      - "8070:8070"
+      - "8071:8071"
+    init: true
+    restart: unless-stopped

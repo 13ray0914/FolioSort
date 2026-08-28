@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PEG evidence chunk",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["measurements", "claims", "limitations", "citation_contexts"],
+  "properties": {
+    "measurements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["property_raw", "property_normalized", "value_raw", "parsed_value", "unit_raw", "uncertainty_raw", "conditions_text", "system_refs", "status", "evidence_sids"],
+        "properties": {
+          "property_raw": {"type": "string"},
+          "property_normalized": {"type": "string"},
+          "value_raw": {"type": "string"},
+          "parsed_value": {"type": ["number", "null"]},
+          "unit_raw": {"type": ["string", "null"]},
+          "uncertainty_raw": {"type": ["string", "null"]},
+          "conditions_text": {"type": ["string", "null"]},
+          "system_refs": {"type": "array", "items": {"type": "string"}},
+          "status": {"type": "string", "enum": ["explicitly_reported", "calculated_from_reported_values", "estimated_from_figure", "ambiguous"]},
+          "evidence_sids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_type", "statement", "subject", "relation", "object", "conditions_text", "system_refs", "claim_origin", "evidence_sids"],
+        "properties": {
+          "claim_type": {
+            "type": "string",
+            "enum": ["experimental_observation", "quantitative_result", "correlation", "causal_interpretation", "mechanistic_hypothesis", "theoretical_prediction", "methodological_claim", "comparison", "negative_result", "limitation"]
+          },
+          "statement": {"type": "string"},
+          "subject": {"type": ["string", "null"]},
+          "relation": {"type": ["string", "null"]},
+          "object": {"type": ["string", "null"]},
+          "conditions_text": {"type": ["string", "null"]},
+          "system_refs": {"type": "array", "items": {"type": "string"}},
+          "claim_origin": {
+            "type": "string",
+            "enum": ["this_paper_result", "author_interpretation", "review_synthesis", "cited_literature_summary"]
+          },
+          "evidence_sids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statement", "origin", "evidence_sids"],
+        "properties": {
+          "statement": {"type": "string"},
+          "origin": {"type": "string", "enum": ["author_stated", "extractor_flag"]},
+          "evidence_sids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "citation_contexts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["evidence_sid", "cited_ref_ids", "rhetorical_role", "relation_text"],
+        "properties": {
+          "evidence_sid": {"type": "string"},
+          "cited_ref_ids": {"type": "array", "items": {"type": "string"}},
+          "rhetorical_role": {
+            "type": "string",
+            "enum": ["background", "definition", "method_adoption", "data_source", "support", "comparison", "contrast", "criticism", "extension", "limitation", "review_pointer", "other"]
+          },
+          "relation_text": {"type": "string"}
+        }
+      }
+    }
+  }
+}

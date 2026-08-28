@@ -1,0 +1,35 @@
+# Research data / generated content
+data/
+db/
+logs/
+outputs/
+backups/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local configuration / secrets
+config.json
+.env
+.env.*
+!.env.example
+
+# Models
+*.gguf
+*.safetensors
+models/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary
+*.tmp
+*.log
