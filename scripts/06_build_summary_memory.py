@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
+import time
+
+import requests
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +38,7 @@ from lib.pipeline_common import (
 )
 
 STAGE = "summary_memory_v4"
-SCRIPT_VERSION = "summary-memory-v4.0"
+SCRIPT_VERSION = "summary-memory-v4.0.2-direct-retry"
 
 
 def visual_chunk_memory(visual: dict[str, Any]) -> dict[str, Any] | None:
@@ -81,6 +85,48 @@ def visual_chunk_memory(visual: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def count_tokens_for_llama(llm_cfg: dict[str, Any], text: str) -> tuple[int, str]:
+    """Count tokens with llama.cpp /tokenize; fall back conservatively if unavailable."""
+    base_url = str(llm_cfg["base_url"]).rstrip("/")
+    root_url = base_url[:-3] if base_url.endswith("/v1") else base_url
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {llm_cfg.get('api_key', 'no-key')}",
+    }
+    try:
+        response = requests.post(
+            f"{root_url}/tokenize",
+            headers=headers,
+            json={"content": text},
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        tokens = payload.get("tokens")
+        if isinstance(tokens, list):
+            return len(tokens), "exact"
+        count = payload.get("count")
+        if isinstance(count, int):
+            return count, "exact"
+    except Exception:
+        pass
+
+    # Scientific text often tokenizes less efficiently than ordinary prose.
+    # 3 chars/token is intentionally conservative for routing decisions.
+    return max(1, math.ceil(len(text) / 3.0)), "estimated"
+
+
+def schema_augmented_system(system_prompt: str, schema: dict[str, Any]) -> str:
+    """Mirror LlamaCppClient.chat_json's schema instruction for routing token counts."""
+    schema_text = json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
+    return (
+        system_prompt.rstrip()
+        + "\n\nYou MUST return exactly one JSON value matching this schema. "
+          "Do not add keys that are absent from the schema.\nJSON_SCHEMA:\n"
+        + schema_text
+    )
+
+
 def batch_by_chars(items: list[dict[str, Any]], max_chars: int) -> list[list[dict[str, Any]]]:
     batches: list[list[dict[str, Any]]] = []
     current: list[dict[str, Any]] = []
@@ -120,15 +166,22 @@ def main() -> None:
     memory_schema_path = root / "schemas/v4/summary_memory.schema.json"
     chunk_prompt_path = root / "prompts/v4/summary_chunk_system.txt"
     merge_prompt_path = root / "prompts/v4/summary_merge_system.txt"
+    direct_prompt_path = root / "prompts/v4/summary_direct_system.txt"
     chunk_schema = load_schema(chunk_schema_path)
     memory_schema = load_schema(memory_schema_path)
     chunk_system = chunk_prompt_path.read_text(encoding="utf-8")
     merge_system = merge_prompt_path.read_text(encoding="utf-8")
+    direct_system = direct_prompt_path.read_text(encoding="utf-8")
 
     cfg = config.get("summary_memory", {})
     chunk_max_chars = int(cfg.get("chunk_max_chars", config["llm"].get("chunk_max_chars", 12000)))
     merge_max_chars = int(cfg.get("merge_max_chars", 24000))
     merge_output_tokens = int(cfg.get("merge_max_tokens", config["llm"].get("max_tokens", 20000)))
+    direct_enabled = bool(cfg.get("direct_enabled", True))
+    direct_max_input_tokens = int(cfg.get("direct_max_input_tokens", 40000))
+    direct_max_output_tokens = int(cfg.get("direct_max_output_tokens", 4000))
+    direct_retry_enabled = bool(cfg.get("direct_retry_enabled", True))
+    direct_retry_output_tokens = int(cfg.get("direct_retry_output_tokens", 6000))
     adaptive_cfg = cfg.get("adaptive_chunking") or config["llm"].get("adaptive_chunking", {}) or {}
     adaptive_enabled = bool(adaptive_cfg.get("enabled", True))
     adaptive_max_depth = int(adaptive_cfg.get("max_depth", 5))
@@ -138,7 +191,9 @@ def main() -> None:
     model = client.healthcheck()
     print(f"LLM model: {model}")
     prompt_version = sha256_text(
-        sha256_file(chunk_prompt_path) + sha256_file(merge_prompt_path)
+        sha256_file(chunk_prompt_path)
+        + sha256_file(merge_prompt_path)
+        + sha256_file(direct_prompt_path)
     )[:16]
     schema_version = sha256_text(
         sha256_file(chunk_schema_path) + sha256_file(memory_schema_path)
@@ -183,9 +238,50 @@ def main() -> None:
         metadata = read_json(metadata_path) if metadata_path.exists() else {}
         canonical = metadata.get("canonical") or paper.get("metadata") or {}
         chunks = make_text_chunks(paper, max_chars=chunk_max_chars, include_abstract=True)
-        print(f"MEMORY  {paper_id}: {len(chunks)} text chunks")
+        visual_memory = visual_chunk_memory(visual)
+        whole_text = "\n\n".join(chunk["text"] for chunk in chunks)
+        visual_context = (
+            json.dumps(visual_memory, ensure_ascii=False, separators=(",", ":"))
+            if visual_memory else "none"
+        )
+        direct_user_prompt = (
+            f"PAPER_ID: {paper_id}\n"
+            f"TITLE: {canonical.get('title') or ''}\n"
+            f"YEAR: {canonical.get('year') or ''}\n"
+            f"JOURNAL: {canonical.get('journal') or ''}\n"
+            f"DOI: {canonical.get('doi') or ''}\n\n"
+            "ARTICLE TEXT WITH STABLE EVIDENCE IDS:\n"
+            + whole_text
+            + "\n\nSTRUCTURED VISUAL EVIDENCE SUMMARY (may be none):\n"
+            + visual_context
+        )
+        direct_count_text = (
+            schema_augmented_system(direct_system, memory_schema)
+            + "\n\n"
+            + direct_user_prompt
+        )
+        direct_input_tokens, token_count_source = count_tokens_for_llama(
+            config["llm"], direct_count_text
+        )
+        route = (
+            "direct"
+            if direct_enabled and direct_input_tokens <= direct_max_input_tokens
+            else "hierarchical"
+        )
+        print(
+            f"MEMORY  {paper_id}: {len(chunks)} text chunks | "
+            f"direct_input={direct_input_tokens} tokens ({token_count_source}) | route={route}"
+        )
         set_stage(conn, paper_id, STAGE, "running", input_hash=input_hash)
-        stats = {"splits": 0, "leaf_chunks": 0, "merge_calls": 0}
+        stats = {
+            "splits": 0,
+            "leaf_chunks": 0,
+            "merge_calls": 0,
+            "direct_calls": 0,
+            "direct_attempts": 0,
+            "direct_retries": 0,
+            "direct_cache_hits": 0,
+        }
 
         def process_summary_chunk(chunk: dict[str, Any], depth: int = 0) -> list[dict[str, Any]]:
             chunk_dir = paths["llm_raw"] / paper_id / "summary_memory" / "chunks"
@@ -227,7 +323,19 @@ def main() -> None:
                 conn, paper_id, STAGE, chunk["chunk_id"], prompt_version, schema_version, model, chunk_hash
             )
             try:
+                started = time.monotonic()
+                print(
+                    f"  CHUNK-START {paper_id} {chunk['chunk_id']} "
+                    f"depth={depth} chars={len(chunk['text'])}",
+                    flush=True,
+                )
                 result = client.chat_json(chunk_system, user_prompt, chunk_schema)
+                elapsed = time.monotonic() - started
+                print(
+                    f"  CHUNK-DONE  {paper_id} {chunk['chunk_id']} "
+                    f"{elapsed:.1f}s",
+                    flush=True,
+                )
                 write_json(chunk_path, result.data)
                 write_json(
                     meta_path,
@@ -294,6 +402,11 @@ def main() -> None:
             run_id = log_llm_run_start(
                 conn, paper_id, STAGE, merge_id, prompt_version, schema_version, model, merge_hash
             )
+            started = time.monotonic()
+            print(
+                f"  MERGE-START {paper_id} {merge_id} items={len(items)} depth={depth}",
+                flush=True,
+            )
             try:
                 result = client.chat_json(
                     merge_system,
@@ -301,13 +414,23 @@ def main() -> None:
                     memory_schema,
                     max_tokens=merge_output_tokens,
                 )
+                elapsed = time.monotonic() - started
                 write_json(out, result.data)
                 write_json(meta, {"input_hash": merge_hash, "items": len(items), "depth": depth})
                 log_llm_run_finish(conn, run_id, "success", out)
                 stats["merge_calls"] += 1
+                print(
+                    f"  MERGE-DONE  {paper_id} {merge_id} {elapsed:.1f}s",
+                    flush=True,
+                )
                 return result.data
             except LLMOutputTruncatedError as error:
+                elapsed = time.monotonic() - started
                 log_llm_run_finish(conn, run_id, "truncated", error=str(error))
+                print(
+                    f"  MERGE-TRUNCATED {paper_id} {merge_id} {elapsed:.1f}s",
+                    flush=True,
+                )
                 if len(items) <= 1:
                     raise RuntimeError(
                         f"summary merge {merge_id} truncated even with one item; increase merge_max_tokens"
@@ -317,36 +440,159 @@ def main() -> None:
                 right = merge_group(items[midpoint:], merge_id + "b", depth + 1)
                 return merge_group([left, right], merge_id + "c", depth + 1)
             except Exception as error:
+                elapsed = time.monotonic() - started
                 log_llm_run_finish(conn, run_id, "error", error=str(error))
+                print(
+                    f"  MERGE-ERROR {paper_id} {merge_id} {elapsed:.1f}s: "
+                    f"{type(error).__name__}: {error}",
+                    flush=True,
+                )
                 raise
 
         try:
-            chunk_memories: list[dict[str, Any]] = []
-            for chunk in chunks:
-                chunk_memories.extend(process_summary_chunk(chunk))
-            visual_memory = visual_chunk_memory(visual)
-            if visual_memory:
-                chunk_memories.append(visual_memory)
+            final_memory: dict[str, Any] | None = None
+            if route == "direct":
+                direct_dir = paths["llm_raw"] / paper_id / "summary_memory" / "direct"
+                direct_path = direct_dir / "whole_paper.json"
+                direct_meta_path = direct_dir / "whole_paper.meta.json"
+                direct_hash = sha256_text(
+                    direct_user_prompt + prompt_version + schema_version + signature
+                )
+                if (
+                    not args.force
+                    and direct_path.exists()
+                    and direct_meta_path.exists()
+                    and read_json(direct_meta_path).get("input_hash") == direct_hash
+                ):
+                    candidate = read_json(direct_path)
+                    if not validate_schema(candidate, memory_schema):
+                        final_memory = candidate
+                        stats["direct_cache_hits"] += 1
+                        print(f"  DIRECT-CACHE {paper_id}", flush=True)
 
-            current: list[dict[str, Any]] = []
-            for index, group in enumerate(batch_by_chars(chunk_memories, merge_max_chars), start=1):
-                current.append(merge_group(group, f"merge_l01_{index:04d}"))
-            level = 2
-            while len(current) > 1:
-                next_level: list[dict[str, Any]] = []
-                for index, group in enumerate(batch_by_chars(current, merge_max_chars), start=1):
-                    next_level.append(merge_group(group, f"merge_l{level:02d}_{index:04d}"))
-                if len(next_level) >= len(current) and len(current) > 1:
-                    midpoint = max(1, len(current) // 2)
-                    next_level = [
-                        merge_group(current[:midpoint], f"merge_l{level:02d}_forced_a"),
-                        merge_group(current[midpoint:], f"merge_l{level:02d}_forced_b"),
-                    ]
-                current = next_level
-                level += 1
-            if not current:
-                raise RuntimeError("no chunk memories were generated")
-            final_memory = current[0]
+                if final_memory is None:
+                    def run_direct_attempt(
+                        max_output_tokens: int,
+                        *,
+                        retry: bool,
+                    ) -> tuple[dict[str, Any] | None, Exception | None]:
+                        attempt_name = "direct_whole_paper_retry" if retry else "direct_whole_paper"
+                        attempt_hash = sha256_text(
+                            direct_hash
+                            + f"|max_output_tokens={max_output_tokens}|retry={int(retry)}"
+                        )
+                        run_id = log_llm_run_start(
+                            conn, paper_id, STAGE, attempt_name,
+                            prompt_version, schema_version, model, attempt_hash
+                        )
+                        stats["direct_attempts"] += 1
+                        if retry:
+                            stats["direct_retries"] += 1
+                            print(
+                                f"  DIRECT-RETRY {paper_id} max_output={max_output_tokens}",
+                                flush=True,
+                            )
+                        else:
+                            print(
+                                f"  DIRECT-START {paper_id} input={direct_input_tokens} tokens "
+                                f"max_output={max_output_tokens}",
+                                flush=True,
+                            )
+                        started = time.monotonic()
+                        try:
+                            result = client.chat_json(
+                                direct_system,
+                                direct_user_prompt,
+                                memory_schema,
+                                max_tokens=max_output_tokens,
+                            )
+                            elapsed = time.monotonic() - started
+                            write_json(direct_path, result.data)
+                            write_json(
+                                direct_meta_path,
+                                {
+                                    "input_hash": direct_hash,
+                                    "paper_id": paper_id,
+                                    "model": result.model,
+                                    "input_tokens": direct_input_tokens,
+                                    "token_count_source": token_count_source,
+                                    "max_output_tokens": max_output_tokens,
+                                    "attempt": "retry" if retry else "initial",
+                                    "direct_attempts": stats["direct_attempts"],
+                                },
+                            )
+                            log_llm_run_finish(conn, run_id, "success", direct_path)
+                            stats["direct_calls"] += 1
+                            print(f"  DIRECT-DONE  {paper_id} {elapsed:.1f}s", flush=True)
+                            return result.data, None
+                        except LLMOutputTruncatedError as error:
+                            elapsed = time.monotonic() - started
+                            log_llm_run_finish(conn, run_id, "truncated", error=str(error))
+                            suffix = " retry" if retry else ""
+                            print(
+                                f"  DIRECT-TRUNCATED {paper_id}{suffix} {elapsed:.1f}s",
+                                flush=True,
+                            )
+                            return None, error
+                        except Exception as error:
+                            elapsed = time.monotonic() - started
+                            log_llm_run_finish(conn, run_id, "error", error=str(error))
+                            suffix = " retry" if retry else ""
+                            print(
+                                f"  DIRECT-ERROR {paper_id}{suffix} {elapsed:.1f}s: "
+                                f"{type(error).__name__}: {error}",
+                                flush=True,
+                            )
+                            return None, error
+
+                    final_memory, direct_error = run_direct_attempt(
+                        direct_max_output_tokens, retry=False
+                    )
+
+                    if (
+                        final_memory is None
+                        and isinstance(direct_error, LLMOutputTruncatedError)
+                        and direct_retry_enabled
+                        and direct_retry_output_tokens > direct_max_output_tokens
+                    ):
+                        final_memory, direct_error = run_direct_attempt(
+                            direct_retry_output_tokens, retry=True
+                        )
+
+                    if final_memory is None:
+                        print(
+                            f"  DIRECT-FALLBACK {paper_id}: "
+                            f"{type(direct_error).__name__ if direct_error else 'unknown error'}: "
+                            f"{direct_error or 'direct mode did not produce a valid memory'}",
+                            flush=True,
+                        )
+
+            if final_memory is None:
+                chunk_memories: list[dict[str, Any]] = []
+                for chunk in chunks:
+                    chunk_memories.extend(process_summary_chunk(chunk))
+                if visual_memory:
+                    chunk_memories.append(visual_memory)
+
+                current: list[dict[str, Any]] = []
+                for index, group in enumerate(batch_by_chars(chunk_memories, merge_max_chars), start=1):
+                    current.append(merge_group(group, f"merge_l01_{index:04d}"))
+                level = 2
+                while len(current) > 1:
+                    next_level: list[dict[str, Any]] = []
+                    for index, group in enumerate(batch_by_chars(current, merge_max_chars), start=1):
+                        next_level.append(merge_group(group, f"merge_l{level:02d}_{index:04d}"))
+                    if len(next_level) >= len(current) and len(current) > 1:
+                        midpoint = max(1, len(current) // 2)
+                        next_level = [
+                            merge_group(current[:midpoint], f"merge_l{level:02d}_forced_a"),
+                            merge_group(current[midpoint:], f"merge_l{level:02d}_forced_b"),
+                        ]
+                    current = next_level
+                    level += 1
+                if not current:
+                    raise RuntimeError("no chunk memories were generated")
+                final_memory = current[0]
             payload = {
                 "paper_id": paper_id,
                 "profile": config["profile"],
@@ -360,6 +606,17 @@ def main() -> None:
                     "adaptive_leaf_chunks": stats["leaf_chunks"],
                     "adaptive_splits": stats["splits"],
                     "merge_calls": stats["merge_calls"],
+                    "direct_calls": stats["direct_calls"],
+                    "direct_attempts": stats["direct_attempts"],
+                    "direct_retries": stats["direct_retries"],
+                    "direct_cache_hits": stats["direct_cache_hits"],
+                    "memory_route": (
+                        "direct"
+                        if stats["direct_calls"] or stats["direct_cache_hits"]
+                        else "hierarchical"
+                    ),
+                    "direct_input_tokens": direct_input_tokens,
+                    "token_count_source": token_count_source,
                     "visual_memory_included": bool(visual_memory),
                 },
                 **final_memory,

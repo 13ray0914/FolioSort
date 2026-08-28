@@ -15,10 +15,24 @@ mkdir -p "$ROOT/logs"
 LOG="$ROOT/logs/auto_pipeline_$(date +%Y%m%d).log"
 LOCK="$ROOT/logs/auto_pipeline.lock"
 exec 9>"$LOCK"
-if ! flock -n 9; then
-  echo "[$(date '+%F %T')] Another review pipeline is already running." | tee -a "$LOG"
-  exit 0
+
+# Acquire the pipeline lock in an external flock process.
+# -o (--close) prevents the lock file descriptor from being inherited
+# by Docker, Qwen, D-Bus, tee, or any other child process.
+if [[ "${REVIEW_PIPELINE_LOCKED:-0}" != "1" ]]; then
+    flock -n -o -E 200 "$LOCK" \
+        env REVIEW_PIPELINE_LOCKED=1 "$0" "$@"
+
+    rc=$?
+
+    if [[ "$rc" -eq 200 ]]; then
+        echo "Another review pipeline is already running."
+        exit 0
+    fi
+
+    exit "$rc"
 fi
+
 exec > >(tee -a "$LOG") 2>&1
 
 echo

@@ -114,7 +114,12 @@
       "max_depth": 5,
       "min_chars": 1800
     },
-    "merge_max_tokens": 20000
+    "merge_max_tokens": 20000,
+    "direct_enabled": true,
+    "direct_max_input_tokens": 40000,
+    "direct_max_output_tokens": 4000,
+    "direct_retry_enabled": true,
+    "direct_retry_output_tokens": 6000
   },
   "embedding": {
     "enabled": true,
