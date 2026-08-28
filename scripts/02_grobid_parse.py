@@ -25,6 +25,7 @@ from lib.pipeline_common import (
 )
 
 STAGE = "grobid_parse"
+PARSER_VERSION = "grobid-v4.0"
 
 
 def main() -> None:
@@ -47,12 +48,13 @@ def main() -> None:
         raise SystemExit(f"GROBID is not ready: {health.text[:200]}")
 
     params_for_hash = {
+        "parser_version": PARSER_VERSION,
         "generateIDs": "1",
         "segmentSentences": "1",
         "includeRawCitations": "1",
         "consolidateHeader": str(grobid.get("consolidate_header", 0)),
         "consolidateCitations": str(grobid.get("consolidate_citations", 0)),
-        "teiCoordinates": ["s", "figure", "biblStruct"],
+        "teiCoordinates": ["s", "p", "head", "figure", "formula", "ref", "biblStruct"],
     }
     parser_signature = stable_json_hash(params_for_hash)
 
@@ -76,7 +78,11 @@ def main() -> None:
                 ("consolidateHeader", str(grobid.get("consolidate_header", 0))),
                 ("consolidateCitations", str(grobid.get("consolidate_citations", 0))),
                 ("teiCoordinates", "s"),
+                ("teiCoordinates", "p"),
+                ("teiCoordinates", "head"),
                 ("teiCoordinates", "figure"),
+                ("teiCoordinates", "formula"),
+                ("teiCoordinates", "ref"),
                 ("teiCoordinates", "biblStruct"),
             ]
             attempts = int(grobid.get("attempts", 4))

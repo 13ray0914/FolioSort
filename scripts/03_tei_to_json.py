@@ -27,7 +27,7 @@ from lib.pipeline_common import (
 )
 
 STAGE = "tei_to_json"
-PARSER_VERSION = "tei-json-v1.2"
+PARSER_VERSION = "tei-json-v4.0"
 NS = {"tei": "http://www.tei-c.org/ns/1.0"}
 XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 
@@ -258,6 +258,60 @@ def parse_references(root) -> list[dict]:
     return refs
 
 
+
+def parse_page_surfaces(root) -> list[dict]:
+    pages = []
+    for surface in root.xpath('//tei:facsimile/tei:surface', namespaces=NS):
+        def f(name):
+            try:
+                return float(surface.get(name)) if surface.get(name) is not None else None
+            except Exception:
+                return None
+        pages.append({
+            "page": int(surface.get("n")) if str(surface.get("n") or "").isdigit() else len(pages) + 1,
+            "ulx": f("ulx"),
+            "uly": f("uly"),
+            "lrx": f("lrx"),
+            "lry": f("lry"),
+        })
+    return pages
+
+
+def parse_table_rows(fig_el) -> list[list[str]]:
+    rows = []
+    for row in fig_el.xpath('.//tei:table/tei:row', namespaces=NS):
+        cells = [text_of(cell) for cell in row.xpath('./tei:cell', namespaces=NS)]
+        if any(cells):
+            rows.append(cells)
+    return rows
+
+
+def parse_formulas(root) -> tuple[list[dict], list[dict]]:
+    formulas = []
+    auxiliary = []
+    for index, formula in enumerate(root.xpath('//tei:text/tei:body//tei:formula', namespaces=NS), start=1):
+        label = first_text(formula, './tei:label') or None
+        raw_text = text_of(formula)
+        item = {
+            "id": formula.get(XML_ID) or f"formula_{index}",
+            "label": label,
+            "raw_text": raw_text or None,
+            "page": get_page_from_coords(formula.get("coords")),
+            "coords": formula.get("coords"),
+        }
+        formulas.append(item)
+        if raw_text:
+            auxiliary.append({
+                "sid": f"eq{index:04d}",
+                "kind": "equation",
+                "heading": f"Equation {label or index}",
+                "page": item["page"],
+                "coords": item["coords"],
+                "citation_ref_ids": [],
+                "text": normalize_ws(" ".join(x for x in [label, raw_text] if x)),
+            })
+    return formulas, auxiliary
+
 def parse_figures_tables(root) -> tuple[list[dict], list[dict], list[dict]]:
     figures = []
     tables = []
@@ -272,11 +326,13 @@ def parse_figures_tables(root) -> tuple[list[dict], list[dict], list[dict]]:
             "caption": first_text(fig, './tei:figDesc') or first_text(fig, './tei:head') or None,
             "page": get_page_from_coords(fig.get("coords")),
             "coords": fig.get("coords"),
+            "graphics": [g.get("url") for g in fig.xpath("./tei:graphic", namespaces=NS) if g.get("url")],
         }
         is_table = fig.get("type") == "table" or bool(fig.xpath('./tei:table', namespaces=NS))
         if is_table:
             table_n += 1
             item["table_text"] = first_text(fig, './tei:table') or None
+            item["rows"] = parse_table_rows(fig)
             tables.append(item)
             combined = normalize_ws(" ".join(x for x in [item.get("label"), item.get("caption"), item.get("table_text")] if x))
             if combined:
@@ -343,6 +399,9 @@ def main() -> None:
             sections = parse_body(root_el, sid_counter)
             refs = parse_references(root_el)
             figures, tables, auxiliary_text = parse_figures_tables(root_el)
+            formulas, equation_auxiliary = parse_formulas(root_el)
+            auxiliary_text.extend(equation_auxiliary)
+            pages = parse_page_surfaces(root_el)
             payload = {
                 "paper_id": paper_id,
                 "source": {
@@ -356,6 +415,8 @@ def main() -> None:
                 "references": refs,
                 "figures": figures,
                 "tables": tables,
+                "formulas": formulas,
+                "pages": pages,
                 "auxiliary_text": auxiliary_text,
                 "stats": {
                     "sentences": sid_counter[0],
@@ -363,6 +424,8 @@ def main() -> None:
                     "references": len(refs),
                     "figures": len(figures),
                     "tables": len(tables),
+                    "formulas": len(formulas),
+                    "pages": len(pages),
                     "auxiliary_text_units": len(auxiliary_text),
                 },
             }

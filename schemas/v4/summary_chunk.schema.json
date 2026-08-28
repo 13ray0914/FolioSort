@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["article_type_guess", "section_summaries", "systems_overview", "method_map", "definitions", "major_findings", "interpretations", "limitations", "cross_chunk_dependencies", "global_constraints"],
+  "properties": {
+    "article_type_guess": {"type": "string", "enum": ["primary_research", "review", "perspective", "methods", "theory", "other", "unclear"]},
+    "section_summaries": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["heading", "summary", "evidence_sids"], "properties": {"heading": {"type": "string"}, "summary": {"type": "string"}, "evidence_sids": {"type": "array", "items": {"type": "string"}}}}},
+    "systems_overview": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "role", "statement", "evidence_sids"], "properties": {"name": {"type": "string"}, "role": {"type": "string"}, "statement": {"type": "string"}, "evidence_sids": {"type": "array", "items": {"type": "string"}}}}},
+    "method_map": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "purpose", "statement", "evidence_sids"], "properties": {"name": {"type": "string"}, "purpose": {"type": ["string", "null"]}, "statement": {"type": "string"}, "evidence_sids": {"type": "array", "items": {"type": "string"}}}}},
+    "definitions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["term", "definition", "evidence_sids"], "properties": {"term": {"type": "string"}, "definition": {"type": "string"}, "evidence_sids": {"type": "array", "items": {"type": "string"}}}}},
+    "major_findings": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["statement", "conditions", "evidence_sids"], "properties": {"statement": {"type": "string"}, "conditions": {"type": ["string", "null"]}, "evidence_sids": {"type": "array", "items": {"type": "string"}}}}},
+    "interpretations": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["statement", "evidence_sids"], "properties": {"statement": {"type": "string"}, "evidence_sids": {"type": "array", "items": {"type": "string"}}}}},
+    "limitations": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["statement", "evidence_sids"], "properties": {"statement": {"type": "string"}, "evidence_sids": {"type": "array", "items": {"type": "string"}}}}},
+    "cross_chunk_dependencies": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["statement", "evidence_sids"], "properties": {"statement": {"type": "string"}, "evidence_sids": {"type": "array", "items": {"type": "string"}}}}},
+    "global_constraints": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["statement", "evidence_sids"], "properties": {"statement": {"type": "string"}, "evidence_sids": {"type": "array", "items": {"type": "string"}}}}}
+  }
+}

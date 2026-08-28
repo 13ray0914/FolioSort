@@ -8,7 +8,8 @@ QWEN_MODEL="${QWEN_MODEL:-$HOME/models/Qwen3.8-27B/Qwen3.8-27B-Q4_K_M.gguf}"
 QWEN_DRAFT_MODEL="${QWEN_DRAFT_MODEL:-$HOME/models/Qwen3.8-27B/mtp-Qwen3.8-27B-Q4_0.gguf}"
 QWEN_URL="${QWEN_URL:-http://127.0.0.1:8080/v1/models}"
 GROBID_URL="${GROBID_URL:-http://127.0.0.1:8070/api/isalive}"
-WAIT_SECONDS="${REVIEW_SERVICE_WAIT:-240}"
+WAIT_SECONDS="${REVIEW_SERVICE_WAIT:-300}"
+export PYTHONUNBUFFERED=1
 
 mkdir -p "$ROOT/logs"
 LOG="$ROOT/logs/auto_pipeline_$(date +%Y%m%d).log"
@@ -20,8 +21,8 @@ if ! flock -n 9; then
 fi
 exec > >(tee -a "$LOG") 2>&1
 
-echo ""
-echo "========== Review pipeline $(date '+%F %T') =========="
+echo
+echo "========== Review pipeline v4 $(date '+%F %T') =========="
 cd "$ROOT"
 if [[ ! -f "$VENV/bin/activate" ]]; then
   echo "ERROR: virtualenv not found: $VENV"
@@ -30,19 +31,19 @@ fi
 # shellcheck disable=SC1090
 source "$VENV/bin/activate"
 
-echo "Adaptive chunking:"
 python - <<'PYCFG'
 import json
 from pathlib import Path
-p=Path("config.json")
-try:
-    c=json.loads(p.read_text(encoding="utf-8"))
-    llm=c.get("llm", {})
-    print("  chunk_max_chars =", llm.get("chunk_max_chars"))
-    print("  max_tokens      =", llm.get("max_tokens"))
-    print("  adaptive        =", llm.get("adaptive_chunking", {}))
-except Exception as e:
-    print("  WARNING: could not read config:", e)
+c=json.loads(Path('config.json').read_text(encoding='utf-8'))
+print('Core extraction:')
+print('  chunk_max_chars =', c.get('llm',{}).get('chunk_max_chars'))
+print('  max_tokens      =', c.get('llm',{}).get('max_tokens'))
+print('  adaptive        =', c.get('llm',{}).get('adaptive_chunking'))
+print('  summary memory  =', c.get('summary_memory',{}))
+print('  Crossref        =', c.get('metadata_enrichment',{}).get('crossref',{}).get('enabled'))
+print('  OpenAlex        =', c.get('metadata_enrichment',{}).get('openalex',{}).get('enabled'))
+print('  Vision LLM      =', c.get('visual',{}).get('vision_llm',{}).get('enabled'))
+print('  MinerU          =', c.get('visual',{}).get('mineru',{}).get('enabled'))
 PYCFG
 
 wait_until() {
@@ -85,21 +86,17 @@ ensure_qwen() {
     echo "OK: Qwen llama-server already running"
     return
   fi
-  echo "Starting Qwen llama-server..."
-  if [[ ! -x "$QWEN_SERVER" ]]; then echo "ERROR: llama-server not found: $QWEN_SERVER"; exit 3; fi
-  if [[ ! -f "$QWEN_MODEL" ]]; then echo "ERROR: Qwen model not found: $QWEN_MODEL"; exit 3; fi
-  if [[ ! -f "$QWEN_DRAFT_MODEL" ]]; then echo "ERROR: MTP draft model not found: $QWEN_DRAFT_MODEL"; exit 3; fi
+  echo "Starting text Qwen llama-server..."
+  [[ -x "$QWEN_SERVER" ]] || { echo "ERROR: llama-server not found: $QWEN_SERVER"; exit 3; }
+  [[ -f "$QWEN_MODEL" ]] || { echo "ERROR: Qwen model not found: $QWEN_MODEL"; exit 3; }
+  [[ -f "$QWEN_DRAFT_MODEL" ]] || { echo "ERROR: MTP draft model not found: $QWEN_DRAFT_MODEL"; exit 3; }
   nohup "$QWEN_SERVER" \
     -m "$QWEN_MODEL" \
     -md "$QWEN_DRAFT_MODEL" \
-    -ngl all \
-    -c 65536 \
-    -np 1 \
+    -ngl all -c 65536 -np 1 \
     --flash-attn on \
-    --spec-type draft-mtp \
-    --spec-draft-n-max 4 \
-    --host 127.0.0.1 \
-    --port 8080 \
+    --spec-type draft-mtp --spec-draft-n-max 4 \
+    --host 127.0.0.1 --port 8080 \
     > "$ROOT/logs/qwen-server.log" 2>&1 &
   echo $! > "$ROOT/logs/qwen-server.pid"
   wait_until "Qwen llama-server" curl -fsS "$QWEN_URL"
@@ -110,16 +107,21 @@ ensure_grobid
 ensure_qwen
 
 echo "--- Scan raw_pdfs and update stable IDs ---"
-python scripts/01_make_manifest.py
+python -u scripts/01_make_manifest.py
 
-echo "--- Run resumable stages 2-7 ---"
-# Every active paper is checked, but current stages are hash-checked and skipped.
-# New, changed, or interrupted papers are the only ones that do expensive work.
-python run_pipeline.py --from-step 2 --to-step 7
+echo "--- Run resumable v4 stages 2-11 ---"
+python -u run_pipeline.py --from-step 2 --to-step 11
 
-echo "--- Rebuild relation network / clustering GUI ---"
-if [[ -f scripts/08_build_network.py ]]; then
-  python scripts/08_build_network.py || echo "WARNING: network GUI build failed; paper extraction itself is complete."
+if [[ "${REVIEW_SKIP_EMBEDDINGS:-0}" != "1" ]]; then
+  echo "--- Incremental SPECTER2 embeddings ---"
+  scripts/12_build_embeddings.sh || echo "WARNING: SPECTER2 stage skipped/failed; run scripts/install_specter2_env.sh once."
 fi
 
-echo "========== Completed $(date '+%F %T') =========="
+if [[ "${REVIEW_SKIP_NETWORKS:-0}" != "1" ]]; then
+  echo "--- Multiplex graph + Leiden clustering ---"
+  scripts/13_build_multiplex_network.sh || echo "WARNING: multiplex graph stage skipped/failed; run scripts/install_network_env.sh once."
+  echo "--- Scientific knowledge graph ---"
+  scripts/14_build_knowledge_graph.sh || echo "WARNING: knowledge graph stage skipped/failed."
+fi
+
+echo "========== Completed v4 $(date '+%F %T') =========="

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["relations"],
+  "properties": {
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pair_id", "relation", "confidence", "rationale", "condition_difference"],
+        "properties": {
+          "pair_id": {"type": "string"},
+          "relation": {"type": "string", "enum": ["supports", "contradicts", "qualifies", "extends", "same_observation_different_interpretation", "not_directly_comparable", "unrelated"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "rationale": {"type": "string"},
+          "condition_difference": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}
