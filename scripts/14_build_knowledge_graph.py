@@ -49,7 +49,7 @@ from lib.pipeline_common import (
 from lib.projects import ensure_project_schema, normalize_project_slug, project_knowledge_dir, project_name, project_rows
 from lib.v4_common import ensure_v4_schema, now_iso
 
-SCRIPT_VERSION = "knowledge-graph-v4.1.1-project-scoped-curated-keywords-history-fonts-progressive-graphml-safe"
+SCRIPT_VERSION = "knowledge-graph-v4.1.2-project-scoped-curated-metadata-keywords-history-fonts-progressive-graphml-safe"
 
 
 def first_author_family(authors: list[Any] | None) -> str:
@@ -86,7 +86,9 @@ def slug(value: str) -> str:
 
 
 def canonical_metadata(paper: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
-    return metadata.get("canonical") or paper.get("metadata") or {}
+    merged = dict(paper.get("metadata") or {})
+    merged.update(metadata.get("canonical") or {})
+    return merged
 
 
 def add_node(nodes: dict[str, dict[str, Any]], node_id: str, node_type: str, label: str, **attrs: Any) -> None:
@@ -488,7 +490,7 @@ function collapseToPapers(){const paperNodes=allNodeArray.filter(n=>n.type==='pa
 function bestMatch(query){const q=query.trim().toLowerCase();if(!q)return null;for(const n of allNodeArray){if(String(n.id).toLowerCase()===q||String(meta[n.id]?.paper_id||'').toLowerCase()===q)return n;}let best=null,bestScore=-1;for(const n of allNodeArray){const m=meta[n.id]||{};const text=`${m.display_label||''} ${m.label||''} ${m.paper_id||''} ${n.id}`.toLowerCase();let score=-1;if(text.startsWith(q))score=4;else if(text.includes(q))score=2;if(n.type==='paper')score+=.25;if(score>bestScore){best=n;bestScore=score}}return bestScore>=0?best:null;}
 function ensureContext(id){const n=allNodesById.get(id);if(!n)return false;let changed=!visibleNodeIds.has(id);const additions=[id];if(n.type!=='paper'){for(const eid of(adjacency.get(id)||[])){const e=allEdgesById.get(eid),other=e.from===id?e.to:e.from,p=allNodesById.get(other);if(p&&p.type==='paper'){if(!visibleNodeIds.has(other)){changed=true;additions.push(other)}break}}}if(changed)pushHistory();enableType(n.type);for(const x of additions)addVisibleNode(x);refreshNodeVisibility();rebuildEdges();return changed;}
 function focusQuery(){const input=document.getElementById('findQuery'),found=bestMatch(input.value);if(!found){setStatus(`No node matched “${input.value}”.`);return;}ensureContext(found.id);selectedId=found.id;network.selectNodes([found.id]);network.focus(found.id,{scale:1.55,animation:true});show(found.id);setStatus(`Focused ${meta[found.id]?.display_label||meta[found.id]?.label||found.id}.`);}
-async function openPaper(n){if(!n||n.type!=='paper'||!n.paper_id)return;try{const r=await fetch(`http://127.0.0.1:8766/api/open_pdf?id=${encodeURIComponent(n.paper_id)}`,{method:'POST'}),j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText)}catch(e){alert('Could not open the original PDF. Start Review Literature App first.\n\n'+e)}}async function openCuration(n){const paperId=n?.paper_id;if(!paperId){alert('This node is not linked to a single local paper. Expand a paper or claim node first.');return;}try{const r=await fetch('http://127.0.0.1:8766/api/start_curation',{method:'POST'});if(!r.ok)throw new Error(await r.text());const entity=n.curation_uid?`&entity=${encodeURIComponent(n.curation_uid)}`:'';window.open(`http://127.0.0.1:8765/?paper=${encodeURIComponent(paperId)}${entity}`,'_blank')}catch(e){alert('Could not start the curation editor. Start Review Literature App first.\n\n'+e)}}
+async function openPaper(n){if(!n||n.type!=='paper'||!n.paper_id)return;try{const r=await fetch(`http://127.0.0.1:8766/api/open_pdf?id=${encodeURIComponent(n.paper_id)}`,{method:'POST'}),j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText)}catch(e){alert('Could not open the original PDF. Start FolioSort first.\n\n'+e)}}async function openCuration(n){const paperId=n?.paper_id;if(!paperId){alert('This node is not linked to a single local paper. Expand a paper or claim node first.');return;}try{const r=await fetch('http://127.0.0.1:8766/api/start_curation',{method:'POST'});if(!r.ok)throw new Error(await r.text());const entity=n.curation_uid?`&entity=${encodeURIComponent(n.curation_uid)}`:'';window.open(`http://127.0.0.1:8765/?paper=${encodeURIComponent(paperId)}${entity}`,'_blank')}catch(e){alert('Could not start the curation editor. Start FolioSort first.\n\n'+e)}}
 function show(id){const n=meta[id];if(!n)return;selectedId=id;const open=n.type==='paper'?'<button id="openPdfBtn">Open original PDF</button><div class="muted">Double-click this paper node to open immediately.</div>':'';const curate=n.paper_id?'<button id="curateBtn">Edit terms / proofread claims</button>':'';const mainText=(n.type==='paper'||n.type==='claim')&&n.label?`<div class="primaryText">${esc(n.label)}</div>`:'';document.getElementById('detail').innerHTML=`<div class="detail"><b>${esc(n.display_label||n.label||n.id)}</b><br><span class="badge">${esc(n.type)}</span>${mainText}${Object.entries(n).filter(([k,v])=>!['id','label','type','display_label','node_size'].includes(k)&&v!==null&&v!==''&&JSON.stringify(v)!=='[]').map(([k,v])=>`<b>${esc(k)}</b>: ${esc(typeof v==='object'?JSON.stringify(v):v)}<br>`).join('')}<button id="expandSelectedBtn">Expand 1-hop</button>${open}${curate}</div>`;document.getElementById('expandSelectedBtn').onclick=()=>expandNode(id);const b=document.getElementById('openPdfBtn');if(b)b.onclick=()=>openPaper(n);const c=document.getElementById('curateBtn');if(c)c.onclick=()=>openCuration(n);}
 [...document.querySelectorAll('[data-type],[data-rel]')].forEach(x=>x.onchange=()=>{refreshNodeVisibility();rebuildEdges()});document.getElementById('fit').onclick=()=>network.fit({animation:true});document.getElementById('physics').onclick=()=>setPhysics(!physics);document.getElementById('collapse').onclick=collapseToPapers;document.getElementById('backBtn').onclick=goBack;document.getElementById('forwardBtn').onclick=goForward;document.getElementById('findBtn').onclick=focusQuery;document.getElementById('findQuery').addEventListener('keydown',e=>{if(e.key==='Enter')focusQuery()});
 const pf=document.getElementById('paperFont'),pn=document.getElementById('paperNode'),of=document.getElementById('otherFont');pf.value=paperFontSize;pn.value=paperNodeSize;of.value=otherFontSize;pf.oninput=()=>{paperFontSize=Number(pf.value);localStorage.setItem('kgPaperFont',paperFontSize);refreshAppearance()};pn.oninput=()=>{paperNodeSize=Number(pn.value);localStorage.setItem('kgPaperNode',paperNodeSize);refreshAppearance()};of.oninput=()=>{otherFontSize=Number(of.value);localStorage.setItem('kgOtherFont',otherFontSize);refreshAppearance()};document.getElementById('appearanceReset').onclick=()=>{paperFontSize=DEFAULT_PAPER_FONT;paperNodeSize=DEFAULT_PAPER_NODE;otherFontSize=DEFAULT_OTHER_FONT;localStorage.removeItem('kgPaperFont');localStorage.removeItem('kgPaperNode');localStorage.removeItem('kgOtherFont');pf.value=paperFontSize;pn.value=paperNodeSize;of.value=otherFontSize;refreshAppearance()};
@@ -565,7 +567,9 @@ def main() -> None:
         curated_evidence_path = curated_dir / f"{paper_id}.evidence.json"
         inventory_path = curated_inventory_path if use_curated and curated_inventory_path.exists() else raw_inventory_path
         evidence_path = curated_evidence_path if use_curated and curated_evidence_path.exists() else raw_evidence_path
-        metadata_path = metadata_dir / f"{paper_id}.metadata.json"
+        raw_metadata_path = metadata_dir / f"{paper_id}.metadata.json"
+        curated_metadata_path = curated_dir / f"{paper_id}.metadata.json"
+        metadata_path = curated_metadata_path if use_curated and curated_metadata_path.exists() else raw_metadata_path
         visual_path = visual_dir / f"{paper_id}.visual.json"
         reference_path = reference_dir / f"{paper_id}.references.json"
         if not paper_path.exists() or not inventory_path.exists() or not evidence_path.exists():
@@ -577,6 +581,9 @@ def main() -> None:
         visual = read_json(visual_path) if visual_path.exists() else {}
         references = read_json(reference_path) if reference_path.exists() else {}
         canonical = canonical_metadata(paper, metadata)
+        for field in ["title", "year", "journal", "doi"]:
+            if canonical.get(field) in (None, "") and row[field] not in (None, ""):
+                canonical[field] = row[field]
         source_evidence_map = build_evidence_text_map(paper, visual)
         paper_node = f"paper:{paper_id}"
         add_node(

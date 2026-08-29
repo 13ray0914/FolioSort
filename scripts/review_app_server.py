@@ -50,41 +50,39 @@ from lib.projects import (
     rename_project,
 )
 
-APP_VERSION = "4.1.1-projects-stop"
+APP_VERSION = "4.1.2-foliosort-metadata-curation-networkfix"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Review Literature App</title><style>
-:root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;background:#151515;color:#e8e8eb}*{box-sizing:border-box}body{margin:0;background:#151515}.wrap{max-width:1160px;margin:0 auto;padding:24px}h1{font-size:24px;margin:0 0 5px}h2{font-size:16px;margin:0 0 10px}.muted{color:#a1a1aa;font-size:12px}.grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-top:18px}.card{background:#1c1c1f;border:1px solid #33343a;border-radius:12px;padding:16px}.drop{border:2px dashed #555862;border-radius:12px;padding:30px 18px;text-align:center;background:#202024;transition:.15s}.drop.drag{border-color:#b6b7c3;background:#28282e}.drop b{display:block;font-size:18px;margin-bottom:7px}button,.btn,input,select{background:#2a2a30;color:#f4f4f5;border:1px solid #4a4a53;border-radius:8px;padding:10px 13px;font:inherit}button,.btn{cursor:pointer}button:hover,.btn:hover{border-color:#85858f}button:disabled{opacity:.42;cursor:not-allowed}.primary{background:#373741;font-weight:700;flex:1}.danger{background:#472525;border-color:#7d3838;font-weight:700;flex:0 0 160px}.projectrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar button{flex:1;min-width:150px}.pipelineActions{display:flex;gap:8px;margin-top:12px}.statusline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}.pill{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid #444752;color:#d4d4d8}.ok{color:#86efac;border-color:#365c43}.busy{color:#fde68a;border-color:#6b5a2c}.bad{color:#fca5a5;border-color:#713c3c}.files{margin-top:12px;max-height:240px;overflow:auto}.file{padding:8px 0;border-top:1px solid #303036;font-size:13px;word-break:break-all}.log{background:#111113;border:1px solid #303036;border-radius:8px;padding:10px;white-space:pre-wrap;overflow:auto;max-height:430px;min-height:260px;font:12px/1.45 Consolas,monospace}.hint{margin-top:8px;font-size:12px;color:#a1a1aa}.counts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.metric{background:#222226;border-radius:8px;padding:10px}.metric b{font-size:20px;display:block}.hidden{display:none}.projectName{font-size:13px;margin-top:8px}@media(max-width:800px){.grid{grid-template-columns:1fr}.wrap{padding:14px}.counts{grid-template-columns:1fr 1fr}.projectrow{grid-template-columns:1fr 1fr}.projectrow select{grid-column:1/-1}.pipelineActions{flex-direction:column}.danger{flex:auto}}
+<title>FolioSort</title><style>
+:root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;background:#151515;color:#e8e8eb}*{box-sizing:border-box}body{margin:0;background:#151515}.wrap{max-width:1180px;margin:0 auto;padding:24px}h1{font-size:26px;margin:0 0 5px}h2{font-size:16px;margin:0 0 10px}.muted{color:#a1a1aa;font-size:12px}.grid{display:grid;grid-template-columns:1.08fr .92fr;gap:16px;margin-top:18px;align-items:start}.card{background:#1c1c1f;border:1px solid #33343a;border-radius:12px;padding:16px}.drop{border:2px dashed #555862;border-radius:12px;padding:28px 18px;text-align:center;background:#202024;transition:.15s}.drop.drag{border-color:#b6b7c3;background:#28282e}.drop b{display:block;font-size:18px;margin-bottom:7px}button,.btn,input,select{background:#2a2a30;color:#f4f4f5;border:1px solid #4a4a53;border-radius:8px;padding:10px 13px;font:inherit}button,.btn{cursor:pointer}button:hover,.btn:hover{border-color:#85858f}button:disabled{opacity:.42;cursor:not-allowed}.primary{background:#373741;font-weight:700;flex:1}.danger{background:#472525;border-color:#7d3838;font-weight:700;flex:0 0 160px}.projectrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar button{flex:1;min-width:150px}.pipelineActions{display:flex;gap:8px;margin-top:12px}.statusline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}.pill{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid #444752;color:#d4d4d8}.ok{color:#86efac;border-color:#365c43}.busy{color:#fde68a;border-color:#6b5a2c}.bad{color:#fca5a5;border-color:#713c3c}.files{margin-top:12px;max-height:250px;overflow:auto}.file{padding:8px 0;border-top:1px solid #303036;font-size:13px;word-break:break-all}.log{background:#111113;border:1px solid #303036;border-radius:8px;padding:10px;white-space:pre-wrap;overflow:auto;max-height:650px;min-height:480px;font:12px/1.45 Consolas,monospace}.hint{margin-top:8px;font-size:12px;color:#a1a1aa}.counts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.metric{background:#222226;border-radius:8px;padding:10px}.metric b{font-size:20px;display:block}.hidden{display:none}.projectName{font-size:13px;margin-top:8px}.divider{height:1px;background:#303036;margin:16px 0}.subhead{font-size:14px;font-weight:700;margin:0 0 10px}.results{margin-top:16px}@media(max-width:800px){.grid{grid-template-columns:1fr}.wrap{padding:14px}.counts{grid-template-columns:1fr 1fr}.projectrow{grid-template-columns:1fr 1fr}.projectrow select{grid-column:1/-1}.pipelineActions{flex-direction:column}.danger{flex:auto}.log{min-height:300px;max-height:430px}}
 </style></head><body><div class="wrap">
-<h1>Review Literature App</h1><div class="muted">Local PDF ingestion, project-scoped graph generation, pipeline control, curation, and original-PDF opening. WSL runs in the background.</div>
+<h1>FolioSort</h1><div class="muted">Local literature workspace for project-scoped PDF analysis, graph generation, curation, and original-PDF access. WSL runs in the background.</div>
 <div class="grid"><div>
-<div class="card"><h2>Project</h2><div class="projectrow"><select id="project"></select><button id="newProject">New project</button><button id="renameProject">Rename</button></div><div id="projectInfo" class="hint">Each project gets its own Literature Network and Scientific Knowledge Graph. Analysis data remain shared and deduplicated globally.</div></div>
-<div class="card" style="margin-top:16px"><h2>Add papers</h2><div id="drop" class="drop" tabindex="0"><b>Drop PDF files here</b><span>or click to choose files</span><input id="pick" type="file" accept="application/pdf,.pdf" multiple class="hidden"></div><div id="uploadMsg" class="hint">PDFs dropped here are assigned to the selected project. Exact byte-identical duplicates are deleted, while the existing paper is also assigned to this project.</div><div id="files" class="files"></div><div class="pipelineActions"><button id="analyze" class="primary">Analyze / update selected project</button><button id="stopPipeline" class="danger" disabled>Stop pipeline</button></div><div class="statusline"><span id="pipePill" class="pill">Pipeline: checking</span><span id="svcPill" class="pill">App: ready</span></div></div>
-<div class="card" style="margin-top:16px"><h2>Open outputs</h2><div class="toolbar"><button id="network">Literature network</button><button id="knowledge">Knowledge graph</button><button id="curation">Curation editor</button></div><div class="hint">Graphs open only the selected project. Network nodes use “Family name, year”. Knowledge Graph expansion has Back/Forward history and adjustable label size.</div></div>
-</div><div>
-<div class="card"><h2>Selected project</h2><div class="counts"><div class="metric"><b id="active">–</b><span class="muted">active papers</span></div><div class="metric"><b id="memory">–</b><span class="muted">memories ready</span></div><div class="metric"><b id="networkState">–</b><span class="muted">network</span></div></div><div id="projectDisplay" class="projectName muted"></div></div>
-<div class="card" style="margin-top:16px"><h2>Pipeline log</h2><div id="log" class="log">Waiting for status…</div></div>
-</div></div></div>
+<div class="card"><h2>Project</h2><div class="projectrow"><select id="project"></select><button id="newProject">New project</button><button id="renameProject">Rename</button></div><div id="projectInfo" class="hint">Each project gets its own Literature Network and Scientific Knowledge Graph. Analysis data remain shared and deduplicated globally.</div><div class="counts"><div class="metric"><b id="active">-</b><span class="muted">active papers</span></div><div class="metric"><b id="memory">-</b><span class="muted">memories ready</span></div><div class="metric"><b id="networkState">-</b><span class="muted">network</span></div></div><div id="projectDisplay" class="projectName muted"></div><div class="divider"></div><div class="subhead">Add papers</div><div id="drop" class="drop" tabindex="0"><b>Drop PDF files here</b><span>or click to choose files</span><input id="pick" type="file" accept="application/pdf,.pdf" multiple class="hidden"></div><div id="uploadMsg" class="hint">PDFs dropped here are assigned to the selected project. Exact byte-identical duplicates are deleted, while the existing paper is also assigned to this project.</div><div id="files" class="files"></div><div class="pipelineActions"><button id="analyze" class="primary">Analyze / update selected project</button><button id="stopPipeline" class="danger" disabled>Stop pipeline</button></div><div class="statusline"><span id="pipePill" class="pill">Pipeline: checking</span><span id="svcPill" class="pill">FolioSort: ready</span></div></div>
+<div class="card results"><h2>Results</h2><div class="toolbar"><button id="network">Literature network</button><button id="knowledge">Knowledge graph</button><button id="curation">Curation editor</button></div><div class="hint">Results open only the selected project. Network nodes use “Family name, year”. Knowledge Graph expansion has Back/Forward history and adjustable label size.</div></div>
+</div><div><div class="card"><h2>Pipeline log</h2><div id="log" class="log">Waiting for status...</div></div></div></div></div>
 <script>
-const $=x=>document.getElementById(x),drop=$('drop'),pick=$('pick');let currentProject=localStorage.getItem('review-project')||'default';let refreshing=false;
+const $=x=>document.getElementById(x),drop=$('drop'),pick=$('pick');let currentProject=localStorage.getItem('foliosort-project')||localStorage.getItem('review-project')||'default';let refreshing=false;
+function saveProject(){localStorage.setItem('foliosort-project',currentProject)}
 function esc(s){return String(s??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}function fmtBytes(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
 async function jsonFetch(url,opt={}){const r=await fetch(url,opt);const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j}
 function purl(path){return path+(path.includes('?')?'&':'?')+'project='+encodeURIComponent(currentProject)}
-async function upload(list){const fs=[...list].filter(f=>f.name.toLowerCase().endsWith('.pdf'));if(!fs.length)return;const fd=new FormData();fs.forEach(f=>fd.append('files',f,f.name));$('uploadMsg').textContent=`Uploading ${fs.length} PDF(s) to ${currentProject}…`;try{const j=await jsonFetch(purl('/api/upload'),{method:'POST',body:fd});$('uploadMsg').textContent=j.message;await refresh();}catch(e){$('uploadMsg').textContent='Upload failed: '+e}}
+async function upload(list){const fs=[...list].filter(f=>f.name.toLowerCase().endsWith('.pdf'));if(!fs.length)return;const fd=new FormData();fs.forEach(f=>fd.append('files',f,f.name));$('uploadMsg').textContent=`Uploading ${fs.length} PDF(s) to ${currentProject}...`;try{const j=await jsonFetch(purl('/api/upload'),{method:'POST',body:fd});$('uploadMsg').textContent=j.message;await refresh();}catch(e){$('uploadMsg').textContent='Upload failed: '+e}}
 drop.onclick=()=>pick.click();drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick.click()}};pick.onchange=()=>upload(pick.files);['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>upload(e.dataTransfer.files));
-$('project').addEventListener('change',()=>{currentProject=$('project').value;localStorage.setItem('review-project',currentProject);refresh()});
-$('newProject').onclick=async()=>{const name=prompt('New project name');if(!name)return;try{const j=await jsonFetch('/api/create_project?name='+encodeURIComponent(name),{method:'POST'});currentProject=j.project_slug;localStorage.setItem('review-project',currentProject);await refresh();$('uploadMsg').textContent=`Project created: ${j.name}`;}catch(e){alert(e)}};
+$('project').addEventListener('change',()=>{currentProject=$('project').value;saveProject();refresh()});
+$('newProject').onclick=async()=>{const name=prompt('New project name');if(!name)return;try{const j=await jsonFetch('/api/create_project?name='+encodeURIComponent(name),{method:'POST'});currentProject=j.project_slug;saveProject();await refresh();$('uploadMsg').textContent=`Project created: ${j.name}`;}catch(e){alert(e)}};
 $('renameProject').onclick=async()=>{const selected=$('project').selectedOptions[0];const name=prompt('New display name for this project',selected?selected.textContent.replace(/\s*\(\d+\)\s*$/,''):'');if(!name)return;try{await jsonFetch('/api/rename_project?project='+encodeURIComponent(currentProject)+'&name='+encodeURIComponent(name),{method:'POST'});await refresh();}catch(e){alert(e)}};
 $('analyze').onclick=async()=>{try{const j=await jsonFetch(purl('/api/analyze'),{method:'POST'});$('uploadMsg').textContent=j.message;await refresh();}catch(e){$('uploadMsg').textContent='Could not start pipeline: '+e}};
-$('stopPipeline').onclick=async()=>{if(!confirm('Stop the running pipeline? Completed outputs will be kept.'))return;$('stopPipeline').disabled=true;$('uploadMsg').textContent='Stopping pipeline…';try{const j=await jsonFetch('/api/stop_pipeline',{method:'POST'});$('uploadMsg').textContent=j.message;await refresh();}catch(e){$('uploadMsg').textContent='Could not stop pipeline: '+e;await refresh()}};
+$('stopPipeline').onclick=async()=>{if(!confirm('Stop the running pipeline? Completed outputs will be kept.'))return;$('stopPipeline').disabled=true;$('uploadMsg').textContent='Stopping pipeline...';try{const j=await jsonFetch('/api/stop_pipeline',{method:'POST'});$('uploadMsg').textContent=j.message;await refresh();}catch(e){$('uploadMsg').textContent='Could not stop pipeline: '+e;await refresh()}};
 $('network').onclick=()=>window.open(purl('/network'),'_blank');$('knowledge').onclick=()=>window.open(purl('/knowledge'),'_blank');$('curation').onclick=async()=>{try{await jsonFetch('/api/start_curation',{method:'POST'});window.open('http://127.0.0.1:8765/','_blank')}catch(e){alert(e)}};
-async function refresh(){if(refreshing)return;refreshing=true;try{const j=await jsonFetch(purl('/api/status'));const sel=$('project');const projects=j.projects||[];if(!projects.some(p=>p.project_slug===currentProject)){currentProject=projects[0]?.project_slug||'default';localStorage.setItem('review-project',currentProject)}sel.innerHTML=projects.map(p=>`<option value="${esc(p.project_slug)}" ${p.project_slug===currentProject?'selected':''}>${esc(p.name)} (${p.active_papers})</option>`).join('');$('active').textContent=j.active_papers;$('memory').textContent=j.memory_count;$('networkState').textContent=j.network_ready?'ready':'not yet';$('projectDisplay').textContent=`${j.project_name} · ${currentProject}`;let runText=j.pipeline_running?'running':'idle';if(j.pipeline_running&&j.running_project_name)runText+=` · ${j.running_project_name}`;$('pipePill').textContent='Pipeline: '+runText;$('pipePill').className='pill '+(j.pipeline_running?'busy':'ok');$('stopPipeline').disabled=!j.pipeline_stoppable;$('stopPipeline').title=j.pipeline_running&&!j.pipeline_stoppable?'This pipeline was not started by Review Literature App, so the app will not kill an unknown terminal process.':'';$('files').innerHTML=(j.raw_pdfs||[]).slice(-30).reverse().map(f=>`<div class="file">${esc(f.name)} <span class="muted">${fmtBytes(f.size)}</span></div>`).join('')||'<div class="muted">No PDFs in this project yet.</div>';$('log').textContent=j.log_tail||'No pipeline log yet.';const L=$('log');L.scrollTop=L.scrollHeight;$('svcPill').textContent='App: ready';$('svcPill').className='pill ok'}catch(e){$('svcPill').textContent='App: disconnected';$('svcPill').className='pill bad'}finally{refreshing=false}}
+async function refresh(){if(refreshing)return;refreshing=true;try{const j=await jsonFetch(purl('/api/status'));const sel=$('project');const projects=j.projects||[];if(!projects.some(p=>p.project_slug===currentProject)){currentProject=projects[0]?.project_slug||'default';saveProject()}sel.innerHTML=projects.map(p=>`<option value="${esc(p.project_slug)}" ${p.project_slug===currentProject?'selected':''}>${esc(p.name)} (${p.active_papers})</option>`).join('');$('active').textContent=j.active_papers;$('memory').textContent=j.memory_count;$('networkState').textContent=j.network_ready?'ready':'not yet';$('projectDisplay').textContent=`${j.project_name} · ${currentProject}`;let runText=j.pipeline_running?'running':'idle';if(j.pipeline_running&&j.running_project_name)runText+=` · ${j.running_project_name}`;$('pipePill').textContent='Pipeline: '+runText;$('pipePill').className='pill '+(j.pipeline_running?'busy':'ok');$('stopPipeline').disabled=!j.pipeline_stoppable;$('stopPipeline').title=j.pipeline_running&&!j.pipeline_stoppable?'This pipeline was not started by FolioSort, so FolioSort will not kill an unknown terminal process.':'';$('files').innerHTML=(j.raw_pdfs||[]).slice(-30).reverse().map(f=>`<div class="file">${esc(f.name)} <span class="muted">${fmtBytes(f.size)}</span></div>`).join('')||'<div class="muted">No PDFs in this project yet.</div>';$('log').textContent=j.log_tail||'No pipeline log yet.';const L=$('log');L.scrollTop=L.scrollHeight;$('svcPill').textContent='FolioSort: ready';$('svcPill').className='pill ok'}catch(e){$('svcPill').textContent='FolioSort: disconnected';$('svcPill').className='pill bad'}finally{refreshing=false}}
 refresh();setInterval(refresh,2500);
 </script></body></html>'''
 
 
-class ReviewApp:
+
+class FolioSortApp:
     def __init__(self, config_path: str):
         self.config, self.root = load_config(config_path)
         self.paths = get_paths(self.config, self.root)
@@ -297,7 +295,7 @@ class ReviewApp:
         pid = self.owned_pipeline_pid()
         if pid is None:
             if self.pipeline_running():
-                return False, "A pipeline is running, but it was not started by Review Literature App. It was left untouched for safety."
+                return False, "A pipeline is running, but it was not started by FolioSort. It was left untouched for safety."
             return False, "Pipeline is already idle."
         self.append_log_marker(f"STOP requested from GUI for process group {pid}")
         try:
@@ -325,12 +323,20 @@ class ReviewApp:
 
     def start_curation(self) -> str:
         port = int((self.config.get("curation") or {}).get("feedback_port", 8765))
+        expected_version = "4.1.2-metadata-curation"
+        old_server_running = False
         try:
             import urllib.request
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=0.7):
-                return f"http://127.0.0.1:{port}/"
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=0.7) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                if payload.get("version") == expected_version:
+                    return f"http://127.0.0.1:{port}/"
+                old_server_running = True
         except Exception:
             pass
+        if old_server_running:
+            subprocess.run([str(self.root / "scripts" / "stop_curation_gui.sh")], cwd=str(self.root), check=False)
+            time.sleep(0.5)
         proc = subprocess.Popen(
             [str(self.root / ".venv" / "bin" / "python"), str(self.root / "scripts" / "curation_server.py")],
             cwd=str(self.root), stdout=(self.log_dir / "curation-server.log").open("ab"), stderr=subprocess.STDOUT,
@@ -340,11 +346,11 @@ class ReviewApp:
         return f"http://127.0.0.1:{port}/"
 
 
-APP: ReviewApp | None = None
+APP: FolioSortApp | None = None
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = f"ReviewLiteratureApp/{APP_VERSION}"
+    server_version = f"FolioSort/{APP_VERSION}"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         sys.stderr.write("REVIEWAPP %s - %s\n" % (self.address_string(), fmt % args))
@@ -469,8 +475,8 @@ def main() -> None:
     global APP
     ap=argparse.ArgumentParser(description="Windows-facing local dashboard for the literature review pipeline")
     ap.add_argument("--config", default=str(ROOT / "config.json")); ap.add_argument("--host", default="127.0.0.1"); ap.add_argument("--port", type=int, default=8766)
-    args=ap.parse_args(); APP=ReviewApp(args.config)
-    print(f"Review Literature App: http://{args.host}:{args.port}/")
+    args=ap.parse_args(); APP=FolioSortApp(args.config)
+    print(f"FolioSort: http://{args.host}:{args.port}/")
     print("Select a project, drop PDFs, Analyze, and use Stop pipeline when needed.")
     ThreadingHTTPServer((args.host,args.port),Handler).serve_forever()
 

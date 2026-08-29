@@ -6,7 +6,7 @@ if [[ -f "$PIDFILE" ]]; then
   pid=$(cat "$PIDFILE" 2>/dev/null || true)
   if [[ -n "${pid:-}" ]] && kill -0 "$pid" 2>/dev/null; then
     kill "$pid" || true
-    echo "Stopped Review Literature App (PID $pid)."
+    echo "Stopped FolioSort (PID $pid)."
   fi
   rm -f "$PIDFILE"
 fi

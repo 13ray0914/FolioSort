@@ -3,29 +3,37 @@ set -Eeuo pipefail
 ROOT="${REVIEW_ROOT:-$HOME/desktop/review}"
 PORT="${REVIEW_APP_PORT:-8766}"
 URL="http://127.0.0.1:${PORT}/"
+EXPECTED_VERSION="4.1.2-foliosort-metadata-curation-networkfix"
 mkdir -p "$ROOT/logs"
 
-if curl -fsS "$URL/health" >/dev/null 2>&1; then
-  echo "Review Literature App already running: $URL"
+health="$(curl -fsS "${URL}health" 2>/dev/null || true)"
+if [[ -n "$health" ]] && printf '%s' "$health" | grep -Eq '"version"[[:space:]]*:[[:space:]]*"'"$EXPECTED_VERSION"'"'; then
+  echo "FolioSort already running: $URL ($EXPECTED_VERSION)"
 else
+  if [[ -n "$health" ]]; then
+    echo "Older FolioSort detected; restarting it for $EXPECTED_VERSION..."
+    "$ROOT/scripts/stop_review_app.sh" >/dev/null 2>&1 || true
+    sleep 0.5
+  fi
   nohup "$ROOT/.venv/bin/python" "$ROOT/scripts/review_app_server.py" \
     --host 127.0.0.1 --port "$PORT" \
     > "$ROOT/logs/review-app.log" 2>&1 &
   echo $! > "$ROOT/logs/review-app.pid"
   for _ in $(seq 1 80); do
-    if curl -fsS "$URL/health" >/dev/null 2>&1; then break; fi
+    health="$(curl -fsS "${URL}health" 2>/dev/null || true)"
+    if [[ -n "$health" ]] && printf '%s' "$health" | grep -Eq '"version"[[:space:]]*:[[:space:]]*"'"$EXPECTED_VERSION"'"'; then break; fi
     sleep 0.25
   done
-  curl -fsS "$URL/health" >/dev/null 2>&1 || {
-    echo "ERROR: Review Literature App did not start."
+  health="$(curl -fsS "${URL}health" 2>/dev/null || true)"
+  if [[ -z "$health" ]] || ! printf '%s' "$health" | grep -Eq '"version"[[:space:]]*:[[:space:]]*"'"$EXPECTED_VERSION"'"'; then
+    echo "ERROR: FolioSort did not start with expected version $EXPECTED_VERSION."
     tail -n 80 "$ROOT/logs/review-app.log" 2>/dev/null || true
     exit 1
-  }
-  echo "Review Literature App started: $URL"
+  fi
+  echo "FolioSort started: $URL ($EXPECTED_VERSION)"
 fi
 
 if command -v powershell.exe >/dev/null 2>&1; then
-  # Prefer Microsoft Edge app mode so the dashboard looks like a standalone Windows app.
   powershell.exe -NoProfile -Command "\$edge=(Get-Command msedge.exe -ErrorAction SilentlyContinue).Source; if (\$edge) { Start-Process -FilePath \$edge -ArgumentList '--app=$URL' } else { Start-Process '$URL' }" >/dev/null 2>&1 || true
 elif command -v explorer.exe >/dev/null 2>&1; then
   explorer.exe "$URL" >/dev/null 2>&1 || true

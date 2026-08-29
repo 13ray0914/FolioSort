@@ -33,6 +33,55 @@ def canonical_display(value: str | None) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip())
 
 
+def normalize_publication_year(value: Any) -> int | None:
+    """Normalize a human-edited publication year while allowing an explicit blank."""
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if not re.fullmatch(r"\d{4}", text):
+        raise ValueError("publication year must be a 4-digit year or blank")
+    year = int(text)
+    if year < 1000 or year > 2100:
+        raise ValueError("publication year must be between 1000 and 2100")
+    return year
+
+
+def apply_metadata(
+    paper_id: str,
+    raw: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Apply append-only human metadata edits without mutating enriched/raw metadata."""
+    curated = copy.deepcopy(raw or {})
+    raw_canonical = copy.deepcopy(curated.get("canonical") or {})
+    canonical = copy.deepcopy(raw_canonical)
+    metadata_uid = f"metadata:{paper_id}"
+    for event in events:
+        if event.get("paper_id") != paper_id or event.get("entity_type") != "metadata":
+            continue
+        if event.get("entity_uid") not in (None, "", metadata_uid):
+            continue
+        if event.get("event_type") != "metadata_edit":
+            continue
+        patch = event.get("new") or {}
+        for field in ["title", "year", "journal", "doi", "authors"]:
+            if field in patch:
+                canonical[field] = copy.deepcopy(patch[field])
+    curated["canonical_original"] = raw_canonical
+    curated["canonical"] = canonical
+    curated["curation"] = {
+        "paper_id": paper_id,
+        "entity_uid": metadata_uid,
+        "materialized_at": now_iso(),
+        "event_count": sum(
+            1 for x in events
+            if x.get("paper_id") == paper_id and x.get("entity_type") == "metadata"
+        ),
+        "raw_preserved": True,
+    }
+    return curated
+
+
 def entity_uid(paper_id: str, entity_type: str, item: dict[str, Any]) -> str:
     evidence = sorted(str(x) for x in item.get("evidence_sids", []) if x)
     if entity_type == "property":
@@ -426,6 +475,7 @@ def materialize_paper(
     curated_dir: Path,
     ontology_path: Path,
     events_path: Path,
+    metadata_dir: Path | None = None,
 ) -> dict[str, Any]:
     events = read_event_log(events_path)
     ontology = Ontology(ontology_path, events)
@@ -447,6 +497,17 @@ def materialize_paper(
         out = curated_dir / evidence_path.name
         write_json(out, curated)
         result["written"].append(str(out))
+    if metadata_dir is not None:
+        metadata_path = metadata_dir / f"{paper_id}.metadata.json"
+        raw_metadata = read_json(metadata_path) if metadata_path.exists() else {}
+        curated_metadata = apply_metadata(paper_id, raw_metadata, events)
+        if metadata_path.exists():
+            curated_metadata["curation"]["raw_sha256"] = sha256_file(metadata_path)
+        else:
+            curated_metadata["curation"]["raw_sha256"] = None
+        out = curated_dir / f"{paper_id}.metadata.json"
+        write_json(out, curated_metadata)
+        result["written"].append(str(out))
     return result
 
 
@@ -457,6 +518,7 @@ def materialize_all(
     curated_dir: Path,
     ontology_path: Path,
     events_path: Path,
+    metadata_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     return [
         materialize_paper(
@@ -465,6 +527,7 @@ def materialize_all(
             curated_dir=curated_dir,
             ontology_path=ontology_path,
             events_path=events_path,
+            metadata_dir=metadata_dir,
         )
         for paper_id in paper_ids
     ]

@@ -61,6 +61,7 @@ def main() -> None:
         curated_dir=curated_dir,
         ontology_path=ontology_path,
         events_path=events_path,
+        metadata_dir=paths.get("metadata", root / "data/metadata"),
     )
     written = sum(len(item["written"]) for item in results)
     print(f"CURATE  papers={len(paper_ids)} files_written={written}")

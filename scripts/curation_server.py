@@ -30,6 +30,7 @@ from lib.curation import (
     ensure_curation_schema,
     materialize_all,
     materialize_paper,
+    normalize_publication_year,
     read_event_log,
 )
 from lib.pipeline_common import connect_db, get_paths, load_config, read_json
@@ -40,30 +41,41 @@ HTML = r'''<!doctype html>
 <title>Literature Curation</title>
 <style>
 :root{font-family:Inter,Segoe UI,Arial,sans-serif;color-scheme:dark;background:#151515;color:#e5e7eb}
-*{box-sizing:border-box}body{margin:0;background:#151515}header{position:sticky;top:0;z-index:4;background:#1c1c1f;border-bottom:1px solid #333;padding:12px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}header b{font-size:18px;margin-right:8px}select,input,textarea,button{background:#242428;color:#eee;border:1px solid #444;border-radius:7px;padding:8px;font:inherit}button{cursor:pointer}button:hover{border-color:#777}.danger{border-color:#7f1d1d}.accent{border-color:#6d5bd0}.layout{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;padding:14px}.panel{background:#1c1c1f;border:1px solid #333;border-radius:10px;padding:14px;margin-bottom:14px}.panel h2{margin:0 0 10px;font-size:16px}.panel h3{font-size:14px;margin:12px 0 7px}.item{border-top:1px solid #333;padding:12px 0}.item:first-of-type{border-top:0}.meta{font-size:12px;color:#9ca3af;white-space:pre-wrap}.grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:7px}.full{grid-column:1/-1}.statement{width:100%;min-height:90px}.original{background:#17171a;border:1px solid #333;border-radius:7px;padding:9px;white-space:pre-wrap;color:#93c5fd;font-size:12px;line-height:1.45;margin:7px 0}.history{font-size:12px;max-height:620px;overflow:auto}.event{border-top:1px solid #333;padding:8px 0;word-break:break-word}.notice{font-size:12px;color:#fbbf24}.ok{color:#86efac;font-size:12px}.small{font-size:12px}.raw{color:#93c5fd}.tabnote{font-size:12px;color:#a7f3d0}.highlight{outline:2px solid #8b5cf6;border-radius:8px;padding:8px}.sticky{position:sticky;top:72px}.field label{font-size:11px;color:#aaa;display:block;margin-top:5px}.field input,.field textarea,.field select{width:100%}@media(max-width:950px){.layout{grid-template-columns:1fr}header{position:static}.sticky{position:static}}
+*{box-sizing:border-box}body{margin:0;background:#151515}header{position:sticky;top:0;z-index:4;background:#1c1c1f;border-bottom:1px solid #333;padding:12px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}header b{font-size:18px;margin-right:8px}select,input,textarea,button{background:#242428;color:#eee;border:1px solid #444;border-radius:7px;padding:8px;font:inherit}button{cursor:pointer}button:hover{border-color:#777}.danger{border-color:#7f1d1d}.accent{border-color:#6d5bd0}.layout{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;padding:14px}.panel{background:#1c1c1f;border:1px solid #333;border-radius:10px;padding:14px;margin-bottom:14px}.panel h2{margin:0 0 10px;font-size:16px}.panel h3{font-size:14px;margin:12px 0 7px}.item{border-top:1px solid #333;padding:12px 0}.item:first-of-type{border-top:0}.meta{font-size:12px;color:#9ca3af;white-space:pre-wrap}.grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:7px}.full{grid-column:1/-1}.statement{width:100%;min-height:90px}.original{background:#17171a;border:1px solid #333;border-radius:7px;padding:9px;white-space:pre-wrap;color:#93c5fd;font-size:12px;line-height:1.45;margin:7px 0}.history{font-size:12px;max-height:620px;overflow:auto}.event{border-top:1px solid #333;padding:8px 0;word-break:break-word}.notice{font-size:12px;color:#fbbf24}.ok{color:#86efac;font-size:12px}.small{font-size:12px}.raw{color:#93c5fd}.tabnote{font-size:12px;color:#a7f3d0}.highlight{outline:2px solid #8b5cf6;border-radius:8px;padding:8px}.sticky{position:sticky;top:72px}.field label{font-size:11px;color:#aaa;display:block;margin-top:5px}.field input,.field textarea,.field select{width:100%}.authors{width:100%;min-height:92px}.missing{border-color:#b45309!important}.preview{padding:8px;border-radius:7px;background:#222228;margin-top:7px;font-size:13px}@media(max-width:950px){.layout{grid-template-columns:1fr}header{position:static}.sticky{position:static}}
 </style></head><body>
 <header><b>Literature curation</b><select id="paper"></select><button id="reload">Reload</button><span id="status" class="small"></span></header>
 <div class="layout"><main>
+<div class="panel"><h2>Publication metadata</h2><div class="tabnote">Correct title, author names, publication year, journal, or DOI when automatic metadata retrieval is incomplete. The imported metadata remains unchanged; edits are stored as an append-only overlay.</div><div id="metadataOriginal" class="original"></div><div class="grid"><div class="field full"><label>Title</label><input id="metaTitle"></div><div class="field"><label>Publication year</label><input id="metaYear" inputmode="numeric" maxlength="4" placeholder="e.g. 2024"></div><div class="field"><label>Journal</label><input id="metaJournal"></div><div class="field full"><label>DOI</label><input id="metaDoi" placeholder="10.xxxx/..."></div><div class="field full"><label>Authors — one per line; “Family, Given” is recommended</label><textarea id="metaAuthors" class="authors"></textarea></div><input id="metaReason" class="full" placeholder="Reason for metadata correction (recommended)"><button id="metaSave" class="accent">Save metadata correction</button><button id="metaRestore">Restore imported metadata</button></div><div id="metaPreview" class="preview"></div><div class="notice" style="margin-top:7px">After changing metadata, use “Analyze / update selected project” in FolioSort to rebuild the static graph HTML with the corrected label.</div></div>
 <div class="panel"><h2>Controlled vocabulary / keyword normalization</h2><div class="notice">Raw extraction JSON is never edited. Every change is appended to events.jsonl and SQLite, then materialized into data/curated/.</div>
 <div class="grid"><select id="aliasType"><option value="property">Property</option><option value="method">Method</option><option value="keyword">Keyword / topic tag</option></select><input id="aliasRaw" placeholder="Alias, e.g. aqueous solubility"><input id="aliasCanonical" class="full" placeholder="Canonical term, e.g. water solubility"><input id="aliasReason" class="full" placeholder="Reason (recommended)"><button id="aliasSave" class="full accent">Add global alias</button></div></div>
 <div class="panel"><h2>Properties</h2><div id="properties"></div><div class="add"><h3>Add property</h3><div class="grid"><input id="addPropValue" placeholder="Property"><input id="addPropCanonical" placeholder="Canonical term (optional)"><input id="addPropEvidence" class="full" placeholder="Evidence SIDs, comma separated"><button id="addProp" class="full">Add property</button></div></div></div>
 <div class="panel"><h2>Methods</h2><div id="methods"></div><div class="add"><h3>Add method</h3><div class="grid"><input id="addMethodValue" placeholder="Method"><input id="addMethodCanonical" placeholder="Canonical term (optional)"><input id="addMethodEvidence" class="full" placeholder="Evidence SIDs, comma separated"><button id="addMethod" class="full">Add method</button></div></div></div>
 <div class="panel"><h2>Keywords / topic tags</h2><div class="tabnote">Use these for review-level classification when a concept is broader than a measured property or experimental method.</div><div id="keywords"></div><div class="add"><h3>Add keyword</h3><div class="grid"><input id="addKeywordValue" placeholder="Keyword / topic"><input id="addKeywordCanonical" placeholder="Canonical term (optional)"><input id="addKeywordEvidence" class="full" placeholder="Evidence SIDs, comma separated"><button id="addKeyword" class="full">Add keyword</button></div></div></div>
 <div class="panel"><h2>Claim proofreading</h2><div class="tabnote">Blue text is the immutable LLM extraction. The editable fields below form the curated overlay used by graphs and later drafting.</div><div id="claims"></div><div class="add"><h3>Add claim</h3><textarea id="addClaimStatement" class="statement" placeholder="Claim statement"></textarea><div class="grid"><input id="addClaimType" placeholder="claim_type (optional)"><select id="addClaimStatus"><option value="edited">edited</option><option value="approved">approved</option><option value="needs_revision">needs_revision</option></select><input id="addClaimEvidence" class="full" placeholder="Evidence SIDs, comma separated"><input id="addClaimTags" class="full" placeholder="Curated tags, comma separated"><textarea id="addClaimNotes" class="full" placeholder="Review notes"></textarea><button id="addClaim" class="full">Add claim</button></div></div></div>
-</main><aside><div class="sticky"><div class="panel"><h2>Change history</h2><div id="history" class="history"></div></div><div class="panel"><h2>Data locations</h2><div class="meta">Raw: data/extracted/\nCurated: data/curated/\nAudit: data/curation/events.jsonl\nSQLite: curation_events_v4</div></div></div></aside></div>
+</main><aside><div class="sticky"><div class="panel"><h2>Change history</h2><div id="history" class="history"></div></div><div class="panel"><h2>Data locations</h2><div class="meta">Raw extraction: data/extracted/\nRaw metadata: data/metadata/\nCurated overlays: data/curated/\nAudit: data/curation/events.jsonl\nSQLite: curation_events_v4</div></div></div></aside></div>
 <script>
 const $=id=>document.getElementById(id);let current=null;const params=new URLSearchParams(location.search);const requestedPaper=params.get('paper')||'';const requestedEntity=params.get('entity')||'';
 function escList(v){return (v||'').split(',').map(x=>x.trim()).filter(Boolean)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 async function api(path,opts={}){const r=await fetch(path,{headers:{'Content-Type':'application/json'},...opts});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j}
 function status(s,ok=true){$('status').textContent=s;$('status').className=ok?'ok':'notice'}
-async function post(path,payload){try{status('Saving…');await api(path,{method:'POST',body:JSON.stringify(payload)});await loadPaper(payload.paper_id||$('paper').value);status('Saved. Raw extraction unchanged.')}catch(e){status(String(e),false)}}
-async function loadPapers(){const j=await api('/api/papers');$('paper').replaceChildren(...j.papers.map(p=>{const o=document.createElement('option');o.value=p.paper_id;o.textContent=`${p.paper_id} — ${p.title||''}`;return o}));if(j.papers.length){if(requestedPaper&&j.papers.some(p=>p.paper_id===requestedPaper))$('paper').value=requestedPaper;await loadPaper($('paper').value)}}
+async function post(path,payload){try{status('Saving…');await api(path,{method:'POST',body:JSON.stringify(payload)});await loadPaper(payload.paper_id||$('paper').value);status('Saved. Raw extraction / imported metadata unchanged.')}catch(e){status(String(e),false)}}
+async function loadPapers(){const j=await api('/api/papers');$('paper').replaceChildren(...j.papers.map(p=>{const o=document.createElement('option');o.value=p.paper_id;o.textContent=`${p.paper_id} — ${p.year??'?'} — ${p.title||''}`;return o}));if(j.papers.length){if(requestedPaper&&j.papers.some(p=>p.paper_id===requestedPaper))$('paper').value=requestedPaper;await loadPaper($('paper').value)}}
+function authorText(authors){return (authors||[]).map(a=>{if(typeof a==='string')return a;const fam=a.family||a.surname||'';const given=a.given||a.given_name||'';if(fam&&given)return `${fam}, ${given}`;return a.full_name||a.display_name||fam||given||''}).filter(Boolean).join('\n')}
+function firstFamily(authors){const a=(authors||[])[0];if(!a)return '';if(typeof a==='string'){const x=a.trim();return x.includes(',')?x.split(',')[0].trim():(x.split(/\s+/).pop()||'')}return a.family||a.surname||((a.full_name||a.display_name||'').trim().split(/\s+/).pop()||'')}
+function renderMetadata(meta){const c=meta?.canonical||{},o=meta?.canonical_original||{};$('metaTitle').value=c.title||'';$('metaYear').value=c.year??'';$('metaJournal').value=c.journal||'';$('metaDoi').value=c.doi||'';$('metaAuthors').value=authorText(c.authors||[]);$('metaYear').classList.toggle('missing',c.year===null||c.year===undefined||c.year==='');const rawAuthors=authorText(o.authors||[])||'(missing)';$('metadataOriginal').textContent=`Imported / raw metadata:
+Title: ${o.title||'(missing)'}
+Authors: ${rawAuthors}
+Year: ${o.year??'(missing)'}
+Journal: ${o.journal||'(missing)'}
+DOI: ${o.doi||'(missing)'}`;const fam=firstFamily(c.authors||[]);$('metaPreview').textContent=`Graph label preview: ${fam||current?.paper_id||'?'} , ${c.year??'?'}`.replace(' ,',',');}
 function termRow(item,type){const d=document.createElement('div');d.className='item';d.dataset.entity=item.curation_uid||'';const keys={property:['property_raw','property_normalized'],method:['method_raw','method_normalized'],keyword:['keyword_raw','keyword_normalized']}[type];const [rawKey,normKey]=keys;const origKey=normKey+'_original';const top=document.createElement('div');top.className='meta';top.innerHTML=`<span class="raw">raw: ${esc(item[rawKey]||'')}</span><br>LLM normalized: ${esc(item[origKey]??item[normKey]??'')}<br>source: ${esc(item.canonical_source||'')}<br>uid: ${esc(item.curation_uid||'')}`;const inp=document.createElement('input');inp.value=item[normKey]||'';inp.style.width='100%';const reason=document.createElement('input');reason.placeholder='Reason (recommended)';reason.style.width='100%';const buttons=document.createElement('div');buttons.className='grid';const save=document.createElement('button');save.textContent='Save canonical override';save.onclick=()=>post('/api/term/override',{paper_id:current.paper_id,entity_type:type,entity_uid:item.curation_uid,canonical:inp.value,reason:reason.value});const del=document.createElement('button');del.textContent='Hide from curated view';del.className='danger';del.onclick=()=>{if(confirm('Hide this term from the curated view? Raw extraction remains unchanged.'))post('/api/term/delete',{paper_id:current.paper_id,entity_type:type,entity_uid:item.curation_uid,reason:reason.value})};buttons.append(save,del);d.append(top,inp,reason,buttons);return d}
 function labeledInput(label,value){const wrap=document.createElement('div');wrap.className='field';const lab=document.createElement('label');lab.textContent=label;const inp=document.createElement('input');inp.value=value??'';wrap.append(lab,inp);return [wrap,inp]}
 function claimRow(item){const d=document.createElement('div');d.className='item';d.dataset.entity=item.curation_uid||'';const meta=document.createElement('div');meta.className='meta';meta.textContent=`${item.claim_id||''} | uid: ${item.curation_uid||''}\nEvidence: ${(item.evidence_sids||[]).join(', ')}`;const original=document.createElement('div');original.className='original';original.textContent='Original LLM claim:\n'+(item.statement_original??item.statement??'');const ta=document.createElement('textarea');ta.className='statement';ta.value=item.statement||'';const [typeWrap,typeInp]=labeledInput('Claim type',item.claim_type);const [subWrap,subInp]=labeledInput('Subject',item.subject);const [relWrap,relInp]=labeledInput('Relation',item.relation);const [objWrap,objInp]=labeledInput('Object',item.object);const [condWrap,condInp]=labeledInput('Conditions / scope',item.conditions_text);const [tagsWrap,tagsInp]=labeledInput('Curated tags',(item.curated_tags||[]).join(', '));const statusWrap=document.createElement('div');statusWrap.className='field';const statusLab=document.createElement('label');statusLab.textContent='Review status';const statusSel=document.createElement('select');for(const value of ['unreviewed','edited','approved','needs_revision','rejected']){const o=document.createElement('option');o.value=value;o.textContent=value;statusSel.append(o)}statusSel.value=item.review_status||'unreviewed';statusWrap.append(statusLab,statusSel);const notes=document.createElement('textarea');notes.className='statement';notes.placeholder='Reviewer notes';notes.value=item.review_notes||'';const reason=document.createElement('input');reason.placeholder='Reason for this change (recommended)';reason.style.width='100%';const fields=document.createElement('div');fields.className='grid';fields.append(typeWrap,statusWrap,subWrap,relWrap,objWrap,condWrap,tagsWrap);tagsWrap.classList.add('full');const buttons=document.createElement('div');buttons.className='grid';const save=document.createElement('button');save.textContent='Save proofread claim';save.className='accent';save.onclick=()=>post('/api/claim/edit',{paper_id:current.paper_id,entity_uid:item.curation_uid,statement:ta.value,claim_type:typeInp.value,subject:subInp.value,relation:relInp.value,object:objInp.value,conditions_text:condInp.value,tags:escList(tagsInp.value),review_status:statusSel.value,review_notes:notes.value,reason:reason.value});const restore=document.createElement('button');restore.textContent='Restore raw wording';restore.onclick=()=>{if(confirm('Restore the editable fields to the original LLM extraction? This restoration is also logged.'))post('/api/claim/restore',{paper_id:current.paper_id,entity_uid:item.curation_uid,reason:reason.value})};const del=document.createElement('button');del.textContent='Hide from curated view';del.className='danger full';del.onclick=()=>{if(confirm('Hide this claim from the curated view? Raw extraction remains unchanged.'))post('/api/claim/delete',{paper_id:current.paper_id,entity_uid:item.curation_uid,reason:reason.value})};buttons.append(save,restore,del);d.append(meta,original,ta,fields,notes,reason,buttons);return d}
 function renderHistory(events){const root=$('history');root.replaceChildren();for(const e of [...events].reverse()){const d=document.createElement('div');d.className='event';const t=document.createElement('div');t.textContent=`${e.created_at} — ${e.event_type}`;const m=document.createElement('div');m.className='meta';m.textContent=`${e.entity_type||''} ${e.entity_uid||''}\nactor: ${e.actor||''}\nold: ${JSON.stringify(e.old??'').slice(0,700)}\nnew: ${JSON.stringify(e.new??'').slice(0,700)}\nreason: ${e.reason||''}`;d.append(t,m);root.append(d)}if(!events.length)root.textContent='No edits yet.'}
-async function loadPaper(id){const j=await api('/api/paper?id='+encodeURIComponent(id));current=j;$('properties').replaceChildren(...(j.inventory.studied_properties||[]).map(x=>termRow(x,'property')));$('methods').replaceChildren(...(j.inventory.methods||[]).map(x=>termRow(x,'method')));$('keywords').replaceChildren(...(j.inventory.keywords||[]).map(x=>termRow(x,'keyword')));$('claims').replaceChildren(...(j.evidence.claims||[]).map(claimRow));renderHistory(j.history);status(`Loaded ${id}`);if(requestedEntity){const target=document.querySelector(`[data-entity="${CSS.escape(requestedEntity)}"]`);if(target){target.classList.add('highlight');target.scrollIntoView({behavior:'smooth',block:'center'})}}}
+async function loadPaper(id){const j=await api('/api/paper?id='+encodeURIComponent(id));current=j;renderMetadata(j.metadata||{});$('properties').replaceChildren(...(j.inventory.studied_properties||[]).map(x=>termRow(x,'property')));$('methods').replaceChildren(...(j.inventory.methods||[]).map(x=>termRow(x,'method')));$('keywords').replaceChildren(...(j.inventory.keywords||[]).map(x=>termRow(x,'keyword')));$('claims').replaceChildren(...(j.evidence.claims||[]).map(claimRow));renderHistory(j.history);status(`Loaded ${id}`);if(requestedEntity){const target=document.querySelector(`[data-entity="${CSS.escape(requestedEntity)}"]`);if(target){target.classList.add('highlight');target.scrollIntoView({behavior:'smooth',block:'center'})}}}
+$('metaSave').onclick=()=>post('/api/metadata/edit',{paper_id:current.paper_id,title:$('metaTitle').value,year:$('metaYear').value,journal:$('metaJournal').value,doi:$('metaDoi').value,authors_text:$('metaAuthors').value,reason:$('metaReason').value});
+$('metaRestore').onclick=()=>{if(confirm('Restore imported metadata values? The restoration itself will also be recorded in the audit history.'))post('/api/metadata/restore',{paper_id:current.paper_id,reason:$('metaReason').value})};
 $('paper').onchange=()=>loadPaper($('paper').value);$('reload').onclick=()=>loadPaper($('paper').value);
 $('aliasSave').onclick=async()=>{await post('/api/term/alias',{entity_type:$('aliasType').value,alias:$('aliasRaw').value,canonical:$('aliasCanonical').value,reason:$('aliasReason').value});$('aliasRaw').value='';$('aliasCanonical').value='';$('aliasReason').value=''};
 $('addProp').onclick=()=>post('/api/term/add',{paper_id:current.paper_id,entity_type:'property',value:$('addPropValue').value,canonical:$('addPropCanonical').value,evidence_sids:escList($('addPropEvidence').value)});
@@ -74,6 +86,39 @@ loadPapers().catch(e=>status(String(e),false));
 </script></body></html>'''
 
 
+def _author_display(author: Any) -> str:
+    if isinstance(author, str):
+        return author.strip()
+    if not isinstance(author, dict):
+        return str(author or "").strip()
+    family = str(author.get("family") or author.get("surname") or "").strip()
+    given = str(author.get("given") or author.get("given_name") or "").strip()
+    if family and given:
+        return f"{family}, {given}"
+    return str(author.get("full_name") or author.get("display_name") or family or given or "").strip()
+
+
+def _parse_authors_text(value: str) -> list[dict[str, Any]]:
+    authors: list[dict[str, Any]] = []
+    for raw_line in str(value or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if "," in line:
+            family, given = [x.strip() for x in line.split(",", 1)]
+            row: dict[str, Any] = {"family": family, "full_name": f"{given} {family}".strip()}
+            if given:
+                row["given"] = given
+        else:
+            parts = line.split()
+            family = parts[-1] if parts else line
+            row = {"family": family, "full_name": line}
+            if len(parts) > 1:
+                row["given"] = " ".join(parts[:-1])
+        authors.append(row)
+    return authors
+
+
 class App:
     def __init__(self, config_path: str):
         self.config, self.root = load_config(config_path)
@@ -82,6 +127,7 @@ class App:
         self.curated_dir = self.paths.get("curated", self.root / "data/curated")
         self.events_path = self.paths.get("curation", self.root / "data/curation") / "events.jsonl"
         self.ontology_path = self.root / cfg.get("ontology_path", "profiles/peg/ontology/terms.json")
+        self.metadata_dir = self.paths.get("metadata", self.root / "data/metadata")
         self.actor = cfg.get("actor") or None
         self.events_path.parent.mkdir(parents=True, exist_ok=True)
         self.events_path.touch(exist_ok=True)
@@ -99,11 +145,53 @@ class App:
         finally:
             conn.close()
 
+    def raw_metadata_canonical(self, paper_id: str) -> dict[str, Any]:
+        base: dict[str, Any] = {}
+        paper_path = self.paths["paper_json"] / f"{paper_id}.json"
+        if paper_path.exists():
+            base.update(read_json(paper_path).get("metadata") or {})
+        conn = self.db()
+        try:
+            row = conn.execute("SELECT title,year,journal,doi FROM papers WHERE paper_id=?", (paper_id,)).fetchone()
+            if row:
+                for field in ["title", "year", "journal", "doi"]:
+                    if base.get(field) in (None, "") and row[field] not in (None, ""):
+                        base[field] = row[field]
+        finally:
+            conn.close()
+        raw_path = self.metadata_dir / f"{paper_id}.metadata.json"
+        if raw_path.exists():
+            base.update(read_json(raw_path).get("canonical") or {})
+        return base
+
+    def current_metadata(self, paper_id: str) -> dict[str, Any]:
+        raw = self.raw_metadata_canonical(paper_id)
+        curated_path = self.curated_dir / f"{paper_id}.metadata.json"
+        current = dict(raw)
+        payload: dict[str, Any] = {}
+        if curated_path.exists():
+            payload = read_json(curated_path)
+            current.update(payload.get("canonical") or {})
+        return {
+            **payload,
+            "paper_id": paper_id,
+            "canonical_original": raw,
+            "canonical": current,
+            "curation_uid": f"metadata:{paper_id}",
+        }
+
+    def paper_summaries(self) -> list[dict[str, Any]]:
+        out = []
+        for paper_id in self.paper_ids():
+            meta = self.current_metadata(paper_id).get("canonical") or {}
+            out.append({"paper_id": paper_id, "title": meta.get("title"), "year": meta.get("year"), "journal": meta.get("journal")})
+        return out
+
     def rematerialize(self, paper_id: str | None = None) -> None:
         if paper_id:
-            materialize_paper(paper_id, extracted_dir=self.paths["extracted"], curated_dir=self.curated_dir, ontology_path=self.ontology_path, events_path=self.events_path)
+            materialize_paper(paper_id, extracted_dir=self.paths["extracted"], curated_dir=self.curated_dir, ontology_path=self.ontology_path, events_path=self.events_path, metadata_dir=self.metadata_dir)
         else:
-            materialize_all(self.paper_ids(), extracted_dir=self.paths["extracted"], curated_dir=self.curated_dir, ontology_path=self.ontology_path, events_path=self.events_path)
+            materialize_all(self.paper_ids(), extracted_dir=self.paths["extracted"], curated_dir=self.curated_dir, ontology_path=self.ontology_path, events_path=self.events_path, metadata_dir=self.metadata_dir)
 
     def current_entity(self, paper_id: str, entity_type: str, uid: str) -> dict[str, Any] | None:
         payload = self.paper_payload(paper_id)
@@ -115,6 +203,8 @@ class App:
             rows = payload.get("inventory", {}).get("keywords", [])
         elif entity_type == "claim":
             rows = payload.get("evidence", {}).get("claims", [])
+        elif entity_type == "metadata":
+            return payload.get("metadata", {}).get("canonical") or {}
         else:
             rows = []
         for row in rows:
@@ -126,8 +216,10 @@ class App:
         self.rematerialize(paper_id)
         inv = self.curated_dir / f"{paper_id}.inventory.json"
         ev = self.curated_dir / f"{paper_id}.evidence.json"
+        metadata = self.current_metadata(paper_id)
         return {
             "paper_id": paper_id,
+            "metadata": metadata,
             "inventory": read_json(inv) if inv.exists() else {},
             "evidence": read_json(ev) if ev.exists() else {},
             "history": [x for x in read_event_log(self.events_path) if x.get("paper_id") in (None, paper_id)],
@@ -138,7 +230,7 @@ APP: App | None = None
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "LiteratureCuration/4.1.1"
+    server_version = "LiteratureCuration/4.1.2"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         sys.stderr.write("CURATION %s - %s\n" % (self.address_string(), fmt % args))
@@ -168,15 +260,10 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         if parsed.path == "/health":
-            self.send_json({"ok": True})
+            self.send_json({"ok": True, "version": "4.1.2-metadata-curation"})
             return
         if parsed.path == "/api/papers":
-            conn = APP.db()
-            try:
-                rows = conn.execute("SELECT paper_id,title,year,journal FROM papers WHERE active=1 ORDER BY paper_id").fetchall()
-                self.send_json({"papers": [dict(x) for x in rows]})
-            finally:
-                conn.close()
+            self.send_json({"papers": APP.paper_summaries()})
             return
         if parsed.path == "/api/paper":
             paper_id = (q.get("id") or [""])[0]
@@ -203,6 +290,30 @@ class Handler(BaseHTTPRequestHandler):
             conn = APP.db()
             common = {"conn": conn, "events_path": APP.events_path, "actor": APP.actor}
             allowed_terms = {"property", "method", "keyword"}
+            if path in {"/api/metadata/edit", "/api/metadata/restore"}:
+                paper_id = str(data.get("paper_id") or "")
+                if paper_id not in APP.paper_ids():
+                    raise ValueError("valid paper_id is required")
+                uid = f"metadata:{paper_id}"
+                current = APP.current_metadata(paper_id).get("canonical") or {}
+                if path.endswith("edit"):
+                    year = normalize_publication_year(data.get("year"))
+                    new = {
+                        "title": str(data.get("title") or "").strip(),
+                        "year": year,
+                        "journal": str(data.get("journal") or "").strip(),
+                        "doi": str(data.get("doi") or "").strip(),
+                        "authors": _parse_authors_text(data.get("authors_text") or ""),
+                    }
+                    event = append_event(**common, event_type="metadata_edit", paper_id=paper_id, entity_type="metadata", entity_uid_value=uid, old=current, new=new, reason=data.get("reason"))
+                else:
+                    raw_meta = APP.raw_metadata_canonical(paper_id)
+                    new = {field: raw_meta.get(field) for field in ["title", "year", "journal", "doi"]}
+                    new["authors"] = list(raw_meta.get("authors") or [])
+                    event = append_event(**common, event_type="metadata_edit", paper_id=paper_id, entity_type="metadata", entity_uid_value=uid, old=current, new=new, reason=data.get("reason") or "Restored imported metadata", extra={"action": "restore_imported_metadata"})
+                APP.rematerialize(paper_id)
+                self.send_json({"ok": True, "event": event})
+                return
             if path == "/api/term/alias":
                 term_type = data.get("entity_type")
                 alias = str(data.get("alias") or "").strip()
@@ -293,7 +404,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     global APP
-    ap = argparse.ArgumentParser(description="Local, append-only human curation UI for properties, methods, keywords, and claims.")
+    ap = argparse.ArgumentParser(description="Local, append-only human curation UI for publication metadata, properties, methods, keywords, and claims.")
     ap.add_argument("--config", default=str(ROOT / "config.json"))
     ap.add_argument("--host")
     ap.add_argument("--port", type=int)
@@ -302,7 +413,7 @@ def main() -> None:
     host = args.host or APP.config.get("curation", {}).get("feedback_bind", "127.0.0.1")
     port = args.port or int(APP.config.get("curation", {}).get("feedback_port", 8765))
     print(f"Curation UI: http://{host}:{port}")
-    print("Raw extraction files are read-only; edits go to events.jsonl + SQLite + data/curated/.")
+    print("Raw extraction and imported metadata files are read-only; edits go to events.jsonl + SQLite + data/curated/.")
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 

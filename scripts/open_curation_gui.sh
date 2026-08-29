@@ -3,12 +3,19 @@ set -Eeuo pipefail
 ROOT="${REVIEW_ROOT:-$HOME/desktop/review}"
 PORT="${REVIEW_CURATION_PORT:-8765}"
 URL="http://127.0.0.1:$PORT/"
+EXPECTED_VERSION="4.1.2-metadata-curation"
 mkdir -p "$ROOT/logs"
-if ! curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+health="$(curl -fsS "http://127.0.0.1:$PORT/health" 2>/dev/null || true)"
+if [[ -z "$health" ]] || ! printf '%s' "$health" | grep -Eq '"version"[[:space:]]*:[[:space:]]*"'"$EXPECTED_VERSION"'"'; then
+  if [[ -n "$health" ]]; then
+    "$ROOT/scripts/stop_curation_gui.sh" >/dev/null 2>&1 || true
+    sleep 0.4
+  fi
   nohup "$ROOT/.venv/bin/python" -u "$ROOT/scripts/curation_server.py" --port "$PORT" > "$ROOT/logs/curation-server.log" 2>&1 &
   echo $! > "$ROOT/logs/curation-server.pid"
   for _ in $(seq 1 40); do
-    curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break
+    health="$(curl -fsS "http://127.0.0.1:$PORT/health" 2>/dev/null || true)"
+    [[ -n "$health" ]] && printf '%s' "$health" | grep -Eq '"version"[[:space:]]*:[[:space:]]*"'"$EXPECTED_VERSION"'"' && break
     sleep 0.25
   done
 fi
@@ -17,4 +24,4 @@ if command -v cmd.exe >/dev/null 2>&1; then
 else
   echo "$URL"
 fi
-echo "Curation GUI: $URL"
+echo "Curation GUI: $URL ($EXPECTED_VERSION)"
