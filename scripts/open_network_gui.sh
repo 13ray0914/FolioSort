@@ -1,15 +1,8 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 ROOT="${REVIEW_ROOT:-$HOME/desktop/review}"
-FILE="$ROOT/outputs/network_gui/network.html"
-if [[ ! -f "$FILE" ]]; then
-  echo "Multiplex network GUI not found. Run: $ROOT/scripts/13_build_multiplex_network.sh"
-  exit 1
-fi
-if command -v explorer.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
-  explorer.exe "$(wslpath -w "$FILE")" >/dev/null 2>&1 &
-elif command -v xdg-open >/dev/null 2>&1; then
-  xdg-open "$FILE" >/dev/null 2>&1 &
-else
-  echo "$FILE"
+"$ROOT/scripts/start_review_app.sh" >/dev/null
+# start_review_app.sh already opens the dashboard; open the network as well.
+if command -v powershell.exe >/dev/null 2>&1; then
+  powershell.exe -NoProfile -Command "Start-Process 'http://127.0.0.1:8766/network'" >/dev/null 2>&1 || true
 fi

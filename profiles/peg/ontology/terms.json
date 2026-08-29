@@ -1,0 +1,65 @@
+{
+  "version": "2026-08-28",
+  "policy": {
+    "automatic_matching": "exact_alias_after_surface_normalization",
+    "fuzzy_matches": "suggest_only",
+    "note": "Aliases are deliberately conservative. Add domain-specific merges through the curation UI after human review."
+  },
+  "terms": {
+    "property": [
+      {
+        "canonical": "water solubility",
+        "aliases": [
+          "water solubility",
+          "aqueous solubility",
+          "solubility in water",
+          "water-solubility",
+          "water_solubility",
+          "aqueous_solubility"
+        ]
+      },
+      {
+        "canonical": "cloud point temperature",
+        "aliases": ["cloud point temperature", "cloud point", "cloud-point temperature"]
+      },
+      {
+        "canonical": "lower critical solution temperature",
+        "aliases": ["lower critical solution temperature", "lcst", "lower-critical-solution temperature"]
+      },
+      {
+        "canonical": "hydration number",
+        "aliases": ["hydration number", "number of hydration waters", "hydration water number"]
+      },
+      {
+        "canonical": "radius of gyration",
+        "aliases": ["radius of gyration", "gyration radius", "r_g", "rg"]
+      },
+      {
+        "canonical": "hydrodynamic radius",
+        "aliases": ["hydrodynamic radius", "r_h", "rh"]
+      }
+    ],
+    "method": [
+      {
+        "canonical": "dynamic light scattering",
+        "aliases": ["dynamic light scattering", "dls"]
+      },
+      {
+        "canonical": "differential scanning calorimetry",
+        "aliases": ["differential scanning calorimetry", "dsc"]
+      },
+      {
+        "canonical": "nuclear magnetic resonance spectroscopy",
+        "aliases": ["nuclear magnetic resonance spectroscopy", "nmr spectroscopy", "nmr"]
+      },
+      {
+        "canonical": "molecular dynamics simulation",
+        "aliases": ["molecular dynamics simulation", "molecular dynamics", "md simulation", "md simulations"]
+      },
+      {
+        "canonical": "uv-visible spectroscopy",
+        "aliases": ["uv-visible spectroscopy", "uv vis spectroscopy", "uv-vis spectroscopy", "uv/vis spectroscopy"]
+      }
+    ]
+  }
+}

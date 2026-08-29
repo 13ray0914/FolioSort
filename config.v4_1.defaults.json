@@ -1,0 +1,22 @@
+{
+  "paths": {
+    "curation": "data/curation",
+    "curated": "data/curated",
+    "curation_outputs": "outputs/curation"
+  },
+  "curation": {
+    "enabled": true,
+    "use_curated_for_graphs": true,
+    "ontology_path": "profiles/peg/ontology/terms.json",
+    "feedback_bind": "127.0.0.1",
+    "feedback_port": 8765,
+    "actor": ""
+  },
+  "knowledge_graph": {
+    "gui": {
+      "initial_mode": "papers",
+      "expand_limit": 400,
+      "physics_disable_threshold": 450
+    }
+  }
+}

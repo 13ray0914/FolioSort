@@ -14,29 +14,27 @@ export PYTHONUNBUFFERED=1
 mkdir -p "$ROOT/logs"
 LOG="$ROOT/logs/auto_pipeline_$(date +%Y%m%d).log"
 LOCK="$ROOT/logs/auto_pipeline.lock"
-exec 9>"$LOCK"
 
-# Acquire the pipeline lock in an external flock process.
-# -o (--close) prevents the lock file descriptor from being inherited
-# by Docker, Qwen, D-Bus, tee, or any other child process.
+# Hold the lock in the external flock parent, but close the lock FD in the
+# pipeline process (-o). Long-lived children such as Qwen, D-Bus, or tee can
+# therefore never inherit the pipeline lock.
 if [[ "${REVIEW_PIPELINE_LOCKED:-0}" != "1" ]]; then
-    flock -n -o -E 200 "$LOCK" \
-        env REVIEW_PIPELINE_LOCKED=1 "$0" "$@"
-
+  if flock -n -o -E 200 "$LOCK" env REVIEW_PIPELINE_LOCKED=1 "$0" "$@"; then
+    exit 0
+  else
     rc=$?
-
     if [[ "$rc" -eq 200 ]]; then
-        echo "Another review pipeline is already running."
-        exit 0
+      echo "[$(date '+%F %T')] Another review pipeline is already running."
+      exit 0
     fi
-
     exit "$rc"
+  fi
 fi
 
 exec > >(tee -a "$LOG") 2>&1
 
 echo
-echo "========== Review pipeline v4 $(date '+%F %T') =========="
+echo "========== Review pipeline v4.1.0 $(date '+%F %T') =========="
 cd "$ROOT"
 if [[ ! -f "$VENV/bin/activate" ]]; then
   echo "ERROR: virtualenv not found: $VENV"
@@ -126,6 +124,10 @@ python -u scripts/01_make_manifest.py
 echo "--- Run resumable v4 stages 2-11 ---"
 python -u run_pipeline.py --from-step 2 --to-step 11
 
+echo "--- Controlled vocabulary + human curation overlay ---"
+python -u scripts/11b_apply_curation.py
+python -u scripts/16_curation_audit.py || echo "WARNING: curation audit failed; curated data itself is still available."
+
 if [[ "${REVIEW_SKIP_EMBEDDINGS:-0}" != "1" ]]; then
   echo "--- Incremental SPECTER2 embeddings ---"
   scripts/12_build_embeddings.sh || echo "WARNING: SPECTER2 stage skipped/failed; run scripts/install_specter2_env.sh once."
@@ -138,4 +140,4 @@ if [[ "${REVIEW_SKIP_NETWORKS:-0}" != "1" ]]; then
   scripts/14_build_knowledge_graph.sh || echo "WARNING: knowledge graph stage skipped/failed."
 fi
 
-echo "========== Completed v4 $(date '+%F %T') =========="
+echo "========== Completed v4.1.0 $(date '+%F %T') =========="

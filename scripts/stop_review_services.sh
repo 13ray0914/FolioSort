@@ -18,6 +18,7 @@ stop_pidfile() {
 
 stop_pidfile "text Qwen llama-server" "$ROOT/logs/qwen-server.pid"
 stop_pidfile "vision llama-server" "$ROOT/logs/vision-server.pid"
+stop_pidfile "curation UI" "$ROOT/logs/curation-server.pid"
 if [[ -f "$ROOT/docker-compose.grobid.yml" ]]; then
   (cd "$ROOT" && docker compose -f docker-compose.grobid.yml stop) || true
 fi

@@ -24,7 +24,34 @@ sys.path.insert(0, str(ROOT))
 from lib.pipeline_common import get_paths, load_config, normalize_key, read_json, write_json
 from lib.v4_common import normalize_doi, normalize_openalex_id, normalize_title
 
-SCRIPT_VERSION = "multiplex-network-v4.0"
+SCRIPT_VERSION = "multiplex-network-v4.1.0-curated-author-year-labels-pdf-open-graphml-safe"
+
+
+def first_author_family(authors: list[Any] | None) -> str:
+    authors = list(authors or [])
+    if not authors:
+        return ""
+    first = authors[0]
+    if isinstance(first, dict):
+        explicit = str(first.get("family") or first.get("surname") or "").strip()
+        full = str(first.get("full_name") or first.get("display_name") or "").strip()
+        if explicit and full and full.lower().endswith(explicit.lower()):
+            return full[len(full) - len(explicit):].strip()
+        if explicit:
+            return explicit
+        if full:
+            return full.rsplit(None, 1)[-1].strip(" ,.;")
+        return ""
+    text = str(first).strip()
+    return text.rsplit(None, 1)[-1].strip(" ,.;") if text else ""
+
+
+def paper_display_label(authors: list[Any] | None, year: Any, paper_id: str) -> str:
+    family = first_author_family(authors)
+    year_text = str(year) if year not in (None, "") else "?"
+    if family:
+        return f"{family}, {year_text}"
+    return f"{paper_id}, {year_text}"
 
 
 def abstract_text(paper: dict[str, Any]) -> str:
@@ -176,6 +203,25 @@ def cluster_multiplex(
         return list(partition.membership)
 
 
+
+
+def graphml_safe(value: Any) -> str | int | float | bool:
+    """Convert arbitrary node/edge attributes into GraphML-supported scalars.
+
+    NetworkX GraphML cannot serialize None, containers, NumPy scalars, or
+    non-finite floats. Keep the semantic information while guaranteeing that
+    export never fails merely because metadata are missing.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, float) and not math.isfinite(value):
+        return ""
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
 def palette(count: int) -> list[str]:
     colors = [
         "#8b5cf6", "#14b8a6", "#f59e0b", "#ef4444", "#3b82f6", "#ec4899",
@@ -211,7 +257,7 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
         vis_nodes.append(
             {
                 "id": node["paper_id"],
-                "label": node["paper_id"],
+                "label": node.get("display_label") or node["paper_id"],
                 "title": html.escape((node.get("title") or node["paper_id"])[:500]),
                 "value": node["node_size"],
                 "cluster": node["cluster_id"],
@@ -248,10 +294,10 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
     script_src = "assets/vis-network.min.js" if local_vis_js else "https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"
     html_doc = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Multiplex Literature Network</title><script src="__VIS_JS__"></script><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;color:#e5e7eb;font-family:Inter,Segoe UI,Arial,sans-serif}#network{position:absolute;inset:0 380px 0 0;background:#151515}#side{position:absolute;right:0;top:0;bottom:0;width:380px;background:rgba(22,22,24,.98);border-left:1px solid #333;padding:18px;box-sizing:border-box;overflow:auto;box-shadow:-12px 0 28px rgba(0,0,0,.22)}h2{font-size:18px;margin:0 0 12px}.muted{color:#9ca3af;font-size:12px}.section{border-top:1px solid #333;margin-top:16px;padding-top:14px}select,input,button{width:100%;box-sizing:border-box;background:#232326;color:#eee;border:1px solid #3c3c42;border-radius:7px;padding:9px;margin:5px 0}button{cursor:pointer}.row{display:flex;gap:7px}.row button{width:50%}.check{display:flex;align-items:center;gap:7px;font-size:13px;margin:7px 0}.check input{width:auto;margin:0}.badge{display:inline-block;padding:3px 7px;border-radius:12px;background:#2c2c32;margin:2px;font-size:11px}.claim{font-size:12px;line-height:1.45;margin:8px 0;color:#d1d5db}.legend{display:flex;align-items:center;gap:7px;font-size:11px;margin:5px 0}.dot{width:10px;height:10px;border-radius:50%}#status{position:absolute;left:12px;bottom:10px;background:rgba(20,20,20,.7);padding:7px 10px;border-radius:7px;font-size:11px;color:#aaa;pointer-events:none}</style></head><body>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;color:#e5e7eb;font-family:Inter,Segoe UI,Arial,sans-serif}#network{position:absolute;inset:0 380px 0 0;background:#151515}#side{position:absolute;right:0;top:0;bottom:0;width:380px;background:rgba(22,22,24,.98);border-left:1px solid #333;padding:18px;box-sizing:border-box;overflow:auto;box-shadow:-12px 0 28px rgba(0,0,0,.22)}h2{font-size:18px;margin:0 0 12px}.muted{color:#9ca3af;font-size:12px}.section{border-top:1px solid #333;margin-top:16px;padding-top:14px}select,input,button{width:100%;box-sizing:border-box;background:#232326;color:#eee;border:1px solid #3c3c42;border-radius:7px;padding:9px;margin:5px 0}button{cursor:pointer}.row{display:flex;gap:7px}.row button{width:50%}.check{display:flex;align-items:center;gap:7px;font-size:13px;margin:7px 0}.check input{width:auto;margin:0}.badge{display:inline-block;padding:3px 7px;border-radius:12px;background:#2c2c32;margin:2px;font-size:11px}.claim{font-size:12px;line-height:1.45;margin:8px 0;color:#d1d5db}.legend{display:flex;align-items:center;gap:7px;font-size:11px;margin:5px 0}.dot{width:10px;height:10px;border-radius:50%}.openpdf{margin-top:10px;background:#303037;border-color:#5b5b66;font-weight:600}.openpdf:hover{border-color:#a3a3b0}#status{position:absolute;left:12px;bottom:10px;background:rgba(20,20,20,.7);padding:7px 10px;border-radius:7px;font-size:11px;color:#aaa;pointer-events:none}</style></head><body>
 <div id="network"></div><div id="status"></div><div id="side"><h2>Multiplex Literature Network</h2><div class="muted">Leiden clustering over separate citation, semantic, property, method, and coupling layers.</div><div class="section"><label>Find paper</label><select id="paperSearch"></select><label>Cluster</label><select id="clusterFilter"></select><div class="row"><button id="fitBtn">Fit</button><button id="physicsBtn">Physics: on</button></div><button id="resetBtn">Reset filters</button></div>
 <div class="section"><b>Layers</b><label class="check"><input type="checkbox" data-rel="citation" checked>Citation</label><label class="check"><input type="checkbox" data-rel="semantic" checked>SPECTER2 semantic</label><label class="check"><input type="checkbox" data-rel="property" checked>Property overlap</label><label class="check"><input type="checkbox" data-rel="method" checked>Method overlap</label><label class="check"><input type="checkbox" data-rel="bibliographic_coupling" checked>Bibliographic coupling</label></div><div class="section"><b>Clusters</b><div id="legend"></div></div><div class="section"><b>Selected paper</b><div id="detail" class="muted">Click a node.</div></div></div>
-<script>const nodeArray=__NODES__;const edgeArray=__EDGES__;const nodeMeta=__NODE_META__;const clusterMeta=__CLUSTER_META__;const clusterColors=__CLUSTER_COLORS__;const nodes=new vis.DataSet(nodeArray),edges=new vis.DataSet(edgeArray);const options={interaction:{hover:true,multiselect:true,tooltipDelay:180},physics:{enabled:true,solver:'forceAtlas2Based',forceAtlas2Based:{gravitationalConstant:-58,centralGravity:.008,springLength:125,springConstant:.04,damping:.42,avoidOverlap:.45},stabilization:{iterations:600}},nodes:{shape:'dot',scaling:{min:7,max:31}},edges:{smooth:{enabled:true,type:'continuous',roundness:.25},scaling:{min:.5,max:5}}};const network=new vis.Network(document.getElementById('network'),{nodes,edges},options);let physics=true;const search=document.getElementById('paperSearch');search.innerHTML='<option value="">— select —</option>'+Object.values(nodeMeta).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).map(n=>`<option value="${n.paper_id}">${n.paper_id} · ${n.year||'?'} · ${(n.title||'').slice(0,72)}</option>`).join('');const cf=document.getElementById('clusterFilter');cf.innerHTML='<option value="all">All clusters</option>'+Object.values(clusterMeta).sort((a,b)=>a.cluster_id-b.cluster_id).map(c=>`<option value="${c.cluster_id}">C${c.cluster_id+1}: ${c.label} (${c.size})</option>`).join('');document.getElementById('legend').innerHTML=Object.values(clusterMeta).sort((a,b)=>a.cluster_id-b.cluster_id).map(c=>`<div class="legend"><span class="dot" style="background:${clusterColors[c.cluster_id]}"></span><span>C${c.cluster_id+1}: ${c.label} (${c.size})</span></div>`).join('');function activeRels(){return new Set([...document.querySelectorAll('[data-rel]')].filter(x=>x.checked).map(x=>x.dataset.rel));}function applyFilters(){const rel=activeRels(),cluster=cf.value;nodes.forEach(n=>nodes.update({id:n.id,hidden:cluster!=='all'&&String(n.cluster)!==cluster}));edges.forEach(e=>edges.update({id:e.id,hidden:!e.relations.some(r=>rel.has(r))}));}document.querySelectorAll('[data-rel]').forEach(x=>x.addEventListener('change',applyFilters));cf.addEventListener('change',()=>{applyFilters();network.fit({animation:true});});search.addEventListener('change',()=>{if(!search.value)return;nodes.update({id:search.value,hidden:false});network.selectNodes([search.value]);network.focus(search.value,{scale:1.65,animation:true});showDetail(search.value);});document.getElementById('fitBtn').onclick=()=>network.fit({animation:true});document.getElementById('physicsBtn').onclick=()=>{physics=!physics;network.setOptions({physics:{enabled:physics}});document.getElementById('physicsBtn').textContent='Physics: '+(physics?'on':'off');};document.getElementById('resetBtn').onclick=()=>{cf.value='all';document.querySelectorAll('[data-rel]').forEach(x=>x.checked=true);applyFilters();network.fit({animation:true});};function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}function showDetail(id){const n=nodeMeta[id];if(!n)return;const props=(n.properties||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const methods=(n.methods||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const claims=(n.claims||[]).slice(0,6).map(x=>`<div class="claim">• ${esc(x)}</div>`).join('');document.getElementById('detail').innerHTML=`<div><b>${esc(n.paper_id)}</b> · ${esc(n.year||'?')}</div><div style="font-size:14px;margin:8px 0"><b>${esc(n.title||'(untitled)')}</b></div><div class="muted">${esc(n.journal||'')}<br>${esc(n.doi||'')}<br>Cluster C${n.cluster_id+1}: ${esc(n.cluster_label)}<br>Validation: ${esc(n.validation_status||'')}</div><div style="margin-top:8px"><b>Properties</b><br>${props||'—'}<br><b>Methods</b><br>${methods||'—'}</div><div class="section"><b>Representative claims</b>${claims||'<div class="muted">No claims extracted.</div>'}</div>`;}network.on('click',p=>{if(p.nodes.length)showDetail(p.nodes[0]);});network.on('stabilizationProgress',p=>document.getElementById('status').textContent=`Stabilizing ${Math.round(100*p.iterations/p.total)}%`);network.once('stabilizationIterationsDone',()=>{document.getElementById('status').textContent=`${nodes.length} papers · ${edges.length} edges`;});</script></body></html>'''
+<script>const nodeArray=__NODES__;const edgeArray=__EDGES__;const nodeMeta=__NODE_META__;const clusterMeta=__CLUSTER_META__;const clusterColors=__CLUSTER_COLORS__;const nodes=new vis.DataSet(nodeArray),edges=new vis.DataSet(edgeArray);const options={interaction:{hover:true,multiselect:true,tooltipDelay:180},physics:{enabled:true,solver:'forceAtlas2Based',forceAtlas2Based:{gravitationalConstant:-58,centralGravity:.008,springLength:125,springConstant:.04,damping:.42,avoidOverlap:.45},stabilization:{iterations:600}},nodes:{shape:'dot',scaling:{min:7,max:31}},edges:{smooth:{enabled:true,type:'continuous',roundness:.25},scaling:{min:.5,max:5}}};const network=new vis.Network(document.getElementById('network'),{nodes,edges},options);let physics=true;const search=document.getElementById('paperSearch');search.innerHTML='<option value="">— select —</option>'+Object.values(nodeMeta).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).map(n=>`<option value="${n.paper_id}">${esc(n.display_label||n.paper_id)} · ${(n.title||'').slice(0,72)}</option>`).join('');const cf=document.getElementById('clusterFilter');cf.innerHTML='<option value="all">All clusters</option>'+Object.values(clusterMeta).sort((a,b)=>a.cluster_id-b.cluster_id).map(c=>`<option value="${c.cluster_id}">C${c.cluster_id+1}: ${c.label} (${c.size})</option>`).join('');document.getElementById('legend').innerHTML=Object.values(clusterMeta).sort((a,b)=>a.cluster_id-b.cluster_id).map(c=>`<div class="legend"><span class="dot" style="background:${clusterColors[c.cluster_id]}"></span><span>C${c.cluster_id+1}: ${c.label} (${c.size})</span></div>`).join('');function activeRels(){return new Set([...document.querySelectorAll('[data-rel]')].filter(x=>x.checked).map(x=>x.dataset.rel));}function applyFilters(){const rel=activeRels(),cluster=cf.value;nodes.forEach(n=>nodes.update({id:n.id,hidden:cluster!=='all'&&String(n.cluster)!==cluster}));edges.forEach(e=>edges.update({id:e.id,hidden:!e.relations.some(r=>rel.has(r))}));}document.querySelectorAll('[data-rel]').forEach(x=>x.addEventListener('change',applyFilters));cf.addEventListener('change',()=>{applyFilters();network.fit({animation:true});});search.addEventListener('change',()=>{if(!search.value)return;nodes.update({id:search.value,hidden:false});network.selectNodes([search.value]);network.focus(search.value,{scale:1.65,animation:true});showDetail(search.value);});document.getElementById('fitBtn').onclick=()=>network.fit({animation:true});document.getElementById('physicsBtn').onclick=()=>{physics=!physics;network.setOptions({physics:{enabled:physics}});document.getElementById('physicsBtn').textContent='Physics: '+(physics?'on':'off');};document.getElementById('resetBtn').onclick=()=>{cf.value='all';document.querySelectorAll('[data-rel]').forEach(x=>x.checked=true);applyFilters();network.fit({animation:true});};function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}async function openOriginalPdf(id){const n=nodeMeta[id];if(!n)return;const status=document.getElementById('status');status.textContent=`Opening ${n.display_label||id}…`;try{const r=await fetch(`http://127.0.0.1:8766/api/open_pdf?id=${encodeURIComponent(id)}`,{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);status.textContent=`Opened ${n.display_label||id}`;}catch(e){status.textContent='PDF opener is not running. Start Review Literature App.';alert('Could not open the original PDF. Start the Review Literature App first.\n\n'+e);}}function showDetail(id){const n=nodeMeta[id];if(!n)return;const props=(n.properties||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const methods=(n.methods||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const claims=(n.claims||[]).slice(0,6).map(x=>`<div class="claim">• ${esc(x)}</div>`).join('');document.getElementById('detail').innerHTML=`<div><b>${esc(n.display_label||n.paper_id)}</b> <span class="muted">(${esc(n.paper_id)})</span></div><div style="font-size:14px;margin:8px 0"><b>${esc(n.title||'(untitled)')}</b></div><div class="muted">${esc(n.journal||'')}<br>${esc(n.doi||'')}<br>${esc(n.original_filename||n.source_relpath||'')}<br>Cluster C${n.cluster_id+1}: ${esc(n.cluster_label)}<br>Validation: ${esc(n.validation_status||'')}</div><button class="openpdf" id="openPdfBtn">Open original PDF</button><div class="muted" style="margin-top:5px">Double-click the node to open immediately.</div><div style="margin-top:8px"><b>Properties</b><br>${props||'—'}<br><b>Methods</b><br>${methods||'—'}</div><div class="section"><b>Representative claims</b>${claims||'<div class="muted">No claims extracted.</div>'}</div>`;document.getElementById('openPdfBtn').onclick=()=>openOriginalPdf(id);}network.on('click',p=>{if(p.nodes.length)showDetail(p.nodes[0]);});network.on('doubleClick',p=>{if(p.nodes.length)openOriginalPdf(p.nodes[0]);});network.on('stabilizationProgress',p=>document.getElementById('status').textContent=`Stabilizing ${Math.round(100*p.iterations/p.total)}%`);network.once('stabilizationIterationsDone',()=>{document.getElementById('status').textContent=`${nodes.length} papers · ${edges.length} edges`;});</script></body></html>'''
     replacements = {
         "__VIS_JS__": script_src,
         "__NODES__": json.dumps(vis_nodes, ensure_ascii=False),
@@ -272,6 +318,8 @@ def main() -> None:
     args = ap.parse_args()
     config, root = load_config(args.config)
     paths = get_paths(config, root)
+    curated_dir = paths.get("curated", root / "data/curated")
+    use_curated = bool(config.get("curation", {}).get("enabled", True) and config.get("curation", {}).get("use_curated_for_graphs", True))
     cfg = config.get("multiplex_graph", {})
     metadata_dir = paths.get("metadata", root / "data/metadata")
     reference_dir = paths.get("reference_matches", root / "data/reference_matches")
@@ -288,8 +336,12 @@ def main() -> None:
     for row in rows:
         paper_id = row["paper_id"]
         paper_path = paths["paper_json"] / f"{paper_id}.json"
-        inventory_path = paths["extracted"] / f"{paper_id}.inventory.json"
-        evidence_path = paths["extracted"] / f"{paper_id}.evidence.json"
+        raw_inventory_path = paths["extracted"] / f"{paper_id}.inventory.json"
+        raw_evidence_path = paths["extracted"] / f"{paper_id}.evidence.json"
+        curated_inventory_path = curated_dir / f"{paper_id}.inventory.json"
+        curated_evidence_path = curated_dir / f"{paper_id}.evidence.json"
+        inventory_path = curated_inventory_path if use_curated and curated_inventory_path.exists() else raw_inventory_path
+        evidence_path = curated_evidence_path if use_curated and curated_evidence_path.exists() else raw_evidence_path
         validation_path = paths["extracted"] / f"{paper_id}.validation.json"
         metadata_path = metadata_dir / f"{paper_id}.metadata.json"
         memory_path = paths.get("summary_memory", root / "data/summary_memory") / f"{paper_id}.memory.json"
@@ -309,13 +361,19 @@ def main() -> None:
         properties = sorted(normalized_set(inventory.get("studied_properties", []), "property_normalized", "property_raw"))
         methods = sorted(normalized_set(inventory.get("methods", []), "method_normalized", "method_raw"))
         claims = [item.get("statement") for item in evidence.get("claims", []) if item.get("statement")]
+        authors = canonical.get("authors") or (paper.get("metadata") or {}).get("authors") or []
+        year = canonical.get("year") or row["year"]
         nodes[paper_id] = {
             "paper_id": paper_id,
+            "display_label": paper_display_label(authors, year, paper_id),
+            "authors": authors,
             "title": canonical.get("title") or row["title"] or paper_id,
-            "year": canonical.get("year") or row["year"],
+            "year": year,
             "journal": canonical.get("journal") or row["journal"],
             "doi": canonical.get("doi") or row["doi"],
             "openalex_id": canonical.get("openalex_id"),
+            "source_relpath": row["source_relpath"],
+            "original_filename": row["original_filename"],
             "validation_status": status,
             "properties": properties,
             "methods": methods,
@@ -471,12 +529,12 @@ def main() -> None:
         "clusters": clusters,
         "layers": {name: [{"source": key[0], "target": key[1], "weight": value} for key, value in edge_map.items()] for name, edge_map in layers.items()},
         "layer_weights": layer_weights,
-        "provenance": {"script_version": SCRIPT_VERSION, "algorithm": "Leiden multiplex"},
+        "provenance": {"script_version": SCRIPT_VERSION, "algorithm": "Leiden multiplex", "curation_enabled": use_curated},
     }
     write_json(out_dir / "network.json", payload)
 
     with (out_dir / "nodes.csv").open("w", encoding="utf-8-sig", newline="") as file:
-        fields = ["paper_id", "title", "year", "journal", "doi", "validation_status", "cluster_id", "cluster_label", "node_size"]
+        fields = ["paper_id", "display_label", "title", "year", "journal", "doi", "source_relpath", "original_filename", "validation_status", "cluster_id", "cluster_label", "node_size"]
         writer = csv.DictWriter(file, fieldnames=fields)
         writer.writeheader()
         for node in payload_nodes:
@@ -503,11 +561,21 @@ def main() -> None:
 
     graph = nx.Graph()
     for node in payload_nodes:
-        attrs = {key: value for key, value in node.items() if isinstance(value, (str, int, float, bool)) or value is None}
+        attrs = {
+            key: graphml_safe(value)
+            for key, value in node.items()
+            if key != "paper_id"
+        }
         graph.add_node(node["paper_id"], **attrs)
     for edge in edges:
-        attrs = {"weight": edge["combined_weight"]}
-        attrs.update({f"layer_{key}": value for key, value in edge["components"].items()})
+        attrs = {
+            "weight": graphml_safe(edge.get("combined_weight")),
+            "shared_references": graphml_safe(edge.get("shared_references", 0)),
+            "directions": graphml_safe(edge.get("directions", [])),
+        }
+        attrs.update(
+            {f"layer_{key}": graphml_safe(value) for key, value in edge.get("components", {}).items()}
+        )
         graph.add_edge(edge["source"], edge["target"], **attrs)
     nx.write_graphml(graph, out_dir / "network.graphml")
 

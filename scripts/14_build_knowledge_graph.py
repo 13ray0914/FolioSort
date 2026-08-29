@@ -34,7 +34,35 @@ from lib.pipeline_common import (
 )
 from lib.v4_common import ensure_v4_schema, now_iso
 
-SCRIPT_VERSION = "knowledge-graph-v4.0"
+SCRIPT_VERSION = "knowledge-graph-v4.1.0-curated-author-year-labels-progressive-gui-graphml-safe"
+
+
+def first_author_family(authors: list[Any] | None) -> str:
+    authors = list(authors or [])
+    if not authors:
+        return ""
+    first = authors[0]
+    if isinstance(first, dict):
+        explicit = str(first.get("family") or first.get("surname") or "").strip()
+        full = str(first.get("full_name") or first.get("display_name") or "").strip()
+        if explicit and full and full.lower().endswith(explicit.lower()):
+            return full[len(full) - len(explicit):].strip()
+        if explicit:
+            return explicit
+        if full:
+            return full.rsplit(None, 1)[-1].strip(" ,.;")
+        return ""
+    text = str(first).strip()
+    return text.rsplit(None, 1)[-1].strip(" ,.;") if text else ""
+
+
+def paper_display_label(canonical: dict[str, Any], paper_id: str) -> str:
+    family = first_author_family(canonical.get("authors") or [])
+    year = canonical.get("year")
+    year_text = str(year) if year not in (None, "") else "?"
+    if family:
+        return f"{family}, {year_text}"
+    return f"{paper_id}, {year_text}"
 
 
 def slug(value: str) -> str:
@@ -316,16 +344,21 @@ def infer_relations(
 
 
 def graphml_safe(value: Any) -> str | int | float | bool:
+    """Convert metadata to scalar values accepted by NetworkX GraphML."""
     if value is None:
+        return ""
+    if type(value).__module__.startswith("numpy") and hasattr(value, "item"):
+        value = value.item()
+    if isinstance(value, float) and not math.isfinite(value):
         return ""
     if isinstance(value, (str, int, float, bool)):
         return value
-    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
 
 def write_tables(out_dir: Path, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    node_fields = ["id", "type", "label", "paper_id", "year", "journal", "doi", "value", "unit", "status"]
+    node_fields = ["id", "type", "label", "display_label", "paper_id", "year", "journal", "doi", "source_relpath", "original_filename", "value", "unit", "status"]
     with (out_dir / "knowledge_nodes.csv").open("w", encoding="utf-8-sig", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=node_fields, extrasaction="ignore")
         writer.writeheader()
@@ -349,6 +382,12 @@ def write_tables(out_dir: Path, nodes: list[dict[str, Any]], edges: list[dict[st
 
 
 def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None) -> None:
+    """Write a progressive/lazy knowledge-graph GUI.
+
+    The complete graph remains embedded for offline use, but vis-network only
+    receives the small currently-visible subset.  Initial view contains paper
+    nodes (plus paper-to-paper citations); neighbors are added on demand.
+    """
     type_colors = {
         "paper": "#8b5cf6",
         "claim": "#f97316",
@@ -381,7 +420,7 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
         "CITES": "#ef4444", "HAS_CLAIM": "#6b7280", "STUDIES_PROPERTY": "#14b8a6",
         "USES_METHOD": "#3b82f6", "STUDIES_SYSTEM": "#ec4899", "REPORTS_MEASUREMENT": "#eab308",
         "MEASURES_PROPERTY": "#facc15", "MEASURED_ON": "#f59e0b", "HAS_VISUAL": "#84cc16",
-        "CLAIM_ABOUT_SYSTEM": "#fb7185", "CLAIM_ABOUT_PROPERTY": "#2dd4bf",
+        "SUPPORTED_BY_VISUAL": "#84cc16", "CLAIM_ABOUT_SYSTEM": "#fb7185", "CLAIM_ABOUT_PROPERTY": "#2dd4bf",
         "supports": "#22c55e", "contradicts": "#ef4444", "qualifies": "#f59e0b",
         "extends": "#06b6d4", "same_observation_different_interpretation": "#a855f7",
         "not_directly_comparable": "#9ca3af",
@@ -408,9 +447,25 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
     script_src = "assets/vis-network.min.js" if local_vis_js else "https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"
     type_list = sorted(type_colors)
     relation_list = sorted({edge["relation"] for edge in payload["edges"]})
+    gui_cfg = payload.get("gui", {})
+    expand_limit = max(50, int(gui_cfg.get("expand_limit", 400)))
+    physics_threshold = max(100, int(gui_cfg.get("physics_disable_threshold", 450)))
     html_doc = r'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scientific Knowledge Graph</title><script src="__VIS_JS__"></script><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;color:#e5e7eb;font-family:Inter,Segoe UI,Arial,sans-serif}#network{position:absolute;inset:0 390px 0 0}#side{position:absolute;right:0;top:0;bottom:0;width:390px;padding:17px;box-sizing:border-box;background:#19191c;border-left:1px solid #333;overflow:auto}h2{margin:0 0 8px;font-size:18px}.muted{color:#9ca3af;font-size:12px}.section{border-top:1px solid #333;margin-top:14px;padding-top:13px}.check{display:flex;align-items:center;gap:7px;margin:5px 0;font-size:12px}.check input{width:auto}button,select,input{width:100%;box-sizing:border-box;background:#26262a;color:#eee;border:1px solid #424248;border-radius:7px;padding:8px;margin:4px 0}.row{display:flex;gap:7px}.row button{width:50%}.badge{display:inline-block;border-radius:12px;padding:3px 7px;margin:2px;background:#2b2b31;font-size:11px}.detail{font-size:12px;line-height:1.5;word-break:break-word}</style></head><body><div id="network"></div><div id="side"><h2>Scientific Knowledge Graph</h2><div class="muted">Papers, claims, systems, properties, methods, measurements, visuals, citations, and optional claim-to-claim relations.</div><div class="section"><label>Find node</label><select id="find"></select><div class="row"><button id="fit">Fit</button><button id="physics">Physics: on</button></div><button id="reset">Reset filters</button></div><div class="section"><b>Node types</b><div id="types"></div></div><div class="section"><b>Relations</b><div id="relations"></div></div><div class="section"><b>Selected</b><div id="detail" class="muted">Click a node.</div></div></div><script>
-const nodeArray=__NODES__,edgeArray=__EDGES__,meta=__META__,types=__TYPES__,relations=__RELATIONS__;const nodes=new vis.DataSet(nodeArray),edges=new vis.DataSet(edgeArray);const network=new vis.Network(document.getElementById('network'),{nodes,edges},{interaction:{hover:true,tooltipDelay:180,multiselect:true},physics:{enabled:true,solver:'forceAtlas2Based',forceAtlas2Based:{gravitationalConstant:-72,centralGravity:.006,springLength:120,springConstant:.035,damping:.48,avoidOverlap:.4},stabilization:{iterations:700}},nodes:{scaling:{min:6,max:30}},edges:{smooth:{enabled:true,type:'continuous'}}});let physics=true;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));document.getElementById('types').innerHTML=types.map(t=>`<label class="check"><input type="checkbox" data-type="${t}" checked>${t}</label>`).join('');document.getElementById('relations').innerHTML=relations.map(r=>`<label class="check"><input type="checkbox" data-rel="${r}" checked>${r}</label>`).join('');const find=document.getElementById('find');find.innerHTML='<option value="">— select —</option>'+Object.values(meta).sort((a,b)=>(a.label||'').localeCompare(b.label||'')).map(n=>`<option value="${esc(n.id)}">${esc(n.type)} · ${esc((n.label||n.id).slice(0,85))}</option>`).join('');function active(sel){return new Set([...document.querySelectorAll(sel)].filter(x=>x.checked).map(x=>x.dataset.type||x.dataset.rel));}function filters(){const ts=active('[data-type]'),rs=active('[data-rel]');nodes.forEach(n=>nodes.update({id:n.id,hidden:!ts.has(n.type)}));edges.forEach(e=>edges.update({id:e.id,hidden:!rs.has(e.relation)}));}[...document.querySelectorAll('[data-type],[data-rel]')].forEach(x=>x.onchange=filters);document.getElementById('fit').onclick=()=>network.fit({animation:true});document.getElementById('physics').onclick=()=>{physics=!physics;network.setOptions({physics:{enabled:physics}});document.getElementById('physics').textContent='Physics: '+(physics?'on':'off');};document.getElementById('reset').onclick=()=>{document.querySelectorAll('[data-type],[data-rel]').forEach(x=>x.checked=true);filters();network.fit({animation:true});};find.onchange=()=>{if(!find.value)return;nodes.update({id:find.value,hidden:false});network.selectNodes([find.value]);network.focus(find.value,{scale:1.7,animation:true});show(find.value);};function show(id){const n=meta[id];if(!n)return;document.getElementById('detail').innerHTML=`<div class="detail"><b>${esc(n.label||n.id)}</b><br><span class="badge">${esc(n.type)}</span><br>${Object.entries(n).filter(([k,v])=>!['id','label','type','display_label','node_size'].includes(k)&&v!==null&&v!==''&&JSON.stringify(v)!=='[]').map(([k,v])=>`<b>${esc(k)}</b>: ${esc(typeof v==='object'?JSON.stringify(v):v)}<br>`).join('')}</div>`;}network.on('click',p=>{if(p.nodes.length)show(p.nodes[0]);});</script></body></html>'''
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;color:#e5e7eb;font-family:Inter,Segoe UI,Arial,sans-serif}#network{position:absolute;inset:0 400px 0 0}#side{position:absolute;right:0;top:0;bottom:0;width:400px;padding:17px;box-sizing:border-box;background:#19191c;border-left:1px solid #333;overflow:auto}h2{margin:0 0 8px;font-size:18px}.muted{color:#9ca3af;font-size:12px}.section{border-top:1px solid #333;margin-top:14px;padding-top:13px}.check{display:flex;align-items:center;gap:7px;margin:5px 0;font-size:12px}.check input{width:auto}button,select,input{width:100%;box-sizing:border-box;background:#26262a;color:#eee;border:1px solid #424248;border-radius:7px;padding:8px;margin:4px 0}.row{display:flex;gap:7px}.row button{width:50%}.badge{display:inline-block;border-radius:12px;padding:3px 7px;margin:2px;background:#2b2b31;font-size:11px}.detail{font-size:12px;line-height:1.5;word-break:break-word}.status{padding:8px;border-radius:7px;background:#222228;margin-top:8px}.accent{color:#c4b5fd}</style></head><body><div id="network"></div><div id="side"><h2>Scientific Knowledge Graph</h2><div class="muted">Progressive view: starts with papers only. Expand one node at a time instead of rendering the entire graph at once.</div><div id="status" class="status muted">Loading…</div><div class="section"><label>Find any node</label><input id="findQuery" placeholder="P0005, water solubility, claim…"><button id="findBtn">Find / focus</button><div class="row"><button id="fit">Fit</button><button id="physics">Physics: on</button></div><button id="collapse">Collapse to papers</button></div><div class="section"><b>Node types</b><div id="types"></div></div><div class="section"><b>Relations</b><div id="relations"></div></div><div class="section"><b>Selected</b><div id="detail" class="muted">Click a node. Use “Expand 1-hop” to reveal its local neighborhood.</div></div></div><script>
+const allNodeArray=__NODES__,allEdgeArray=__EDGES__,meta=__META__,types=__TYPES__,relations=__RELATIONS__,EXPAND_LIMIT=__EXPAND_LIMIT__,PHYSICS_THRESHOLD=__PHYSICS_THRESHOLD__;
+const allNodesById=new Map(allNodeArray.map(n=>[n.id,n]));const allEdgesById=new Map(allEdgeArray.map(e=>[e.id,e]));const adjacency=new Map();for(const e of allEdgeArray){if(!adjacency.has(e.from))adjacency.set(e.from,[]);if(!adjacency.has(e.to))adjacency.set(e.to,[]);adjacency.get(e.from).push(e.id);adjacency.get(e.to).push(e.id);}const initialNodes=allNodeArray.filter(n=>n.type==='paper');let visibleNodeIds=new Set(initialNodes.map(n=>n.id));const nodes=new vis.DataSet(initialNodes),edges=new vis.DataSet();let physics=true;const network=new vis.Network(document.getElementById('network'),{nodes,edges},{interaction:{hover:true,tooltipDelay:180,multiselect:true},physics:{enabled:true,solver:'forceAtlas2Based',forceAtlas2Based:{gravitationalConstant:-72,centralGravity:.006,springLength:120,springConstant:.035,damping:.48,avoidOverlap:.4},stabilization:{iterations:350}},nodes:{scaling:{min:6,max:30}},edges:{smooth:{enabled:true,type:'continuous'}}});
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));document.getElementById('types').innerHTML=types.map(t=>`<label class="check"><input type="checkbox" data-type="${t}" checked>${t}</label>`).join('');document.getElementById('relations').innerHTML=relations.map(r=>`<label class="check"><input type="checkbox" data-rel="${r}" checked>${r}</label>`).join('');
+function activeTypes(){return new Set([...document.querySelectorAll('[data-type]')].filter(x=>x.checked).map(x=>x.dataset.type));}function activeRelations(){return new Set([...document.querySelectorAll('[data-rel]')].filter(x=>x.checked).map(x=>x.dataset.rel));}function setStatus(message=''){const suffix=`${visibleNodeIds.size}/${allNodeArray.length} nodes · ${edges.length}/${allEdgeArray.length} visible edges`;document.getElementById('status').innerHTML=(message?esc(message)+'<br>':'')+`<span class="accent">${suffix}</span>`;}function setPhysics(on){physics=!!on;network.setOptions({physics:{enabled:physics}});document.getElementById('physics').textContent='Physics: '+(physics?'on':'off');}
+function refreshNodeVisibility(){const ts=activeTypes();nodes.forEach(n=>nodes.update({id:n.id,hidden:!ts.has(n.type)}));}function rebuildEdges(){const ts=activeTypes(),rs=activeRelations();const batch=[];for(const e of allEdgeArray){if(!visibleNodeIds.has(e.from)||!visibleNodeIds.has(e.to)||!rs.has(e.relation))continue;const a=allNodesById.get(e.from),b=allNodesById.get(e.to);if(!a||!b||!ts.has(a.type)||!ts.has(b.type))continue;batch.push(e);}edges.clear();if(batch.length)edges.add(batch);setStatus();}
+function addVisibleNode(id){if(visibleNodeIds.has(id))return false;const n=allNodesById.get(id);if(!n)return false;visibleNodeIds.add(id);nodes.add(n);return true;}function enableType(type){const box=document.querySelector(`[data-type="${CSS.escape(type)}"]`);if(box)box.checked=true;}function expandNode(id){const source=allNodesById.get(id);if(!source)return;const rs=activeRelations(),ts=activeTypes();let added=0,skipped=0;for(const eid of (adjacency.get(id)||[])){const e=allEdgesById.get(eid);if(!e||!rs.has(e.relation))continue;const other=e.from===id?e.to:e.from;const n=allNodesById.get(other);if(!n||!ts.has(n.type)||visibleNodeIds.has(other))continue;if(added>=EXPAND_LIMIT){skipped++;continue;}if(addVisibleNode(other))added++;}refreshNodeVisibility();rebuildEdges();if(visibleNodeIds.size<=PHYSICS_THRESHOLD&&added){setPhysics(true);network.stabilize(120);network.once('stabilized',()=>setPhysics(false));}else if(visibleNodeIds.size>PHYSICS_THRESHOLD){setPhysics(false);}network.selectNodes([id]);network.focus(id,{scale:Math.min(1.45,Math.max(.75,1.15)),animation:true});setStatus(`Expanded ${added} neighbors${skipped?`; ${skipped} more not added in this click`:''}.`);}
+function collapseToPapers(){const paperNodes=allNodeArray.filter(n=>n.type==='paper');visibleNodeIds=new Set(paperNodes.map(n=>n.id));nodes.clear();nodes.add(paperNodes);refreshNodeVisibility();rebuildEdges();setPhysics(true);network.stabilize(220);network.once('stabilized',()=>setPhysics(false));network.fit({animation:true});setStatus('Collapsed to paper nodes.');}
+function bestMatch(query){const q=query.trim().toLowerCase();if(!q)return null;for(const n of allNodeArray){if(String(n.id).toLowerCase()===q||String(meta[n.id]?.paper_id||'').toLowerCase()===q)return n;}let best=null,bestScore=-1;for(const n of allNodeArray){const m=meta[n.id]||{};const text=`${m.display_label||''} ${m.label||''} ${m.paper_id||''} ${n.id}`.toLowerCase();let score=-1;if(text.startsWith(q))score=4;else if(text.includes(q))score=2;if(n.type==='paper')score+=.25;if(score>bestScore){best=n;bestScore=score;}}return bestScore>=0?best:null;}
+function ensureContext(id){const n=allNodesById.get(id);if(!n)return;enableType(n.type);addVisibleNode(id);if(n.type!=='paper'){for(const eid of (adjacency.get(id)||[])){const e=allEdgesById.get(eid);const other=e.from===id?e.to:e.from;const p=allNodesById.get(other);if(p&&p.type==='paper'){enableType('paper');addVisibleNode(other);break;}}}refreshNodeVisibility();rebuildEdges();}
+function focusQuery(){const input=document.getElementById('findQuery');const found=bestMatch(input.value);if(!found){setStatus(`No node matched “${input.value}”.`);return;}ensureContext(found.id);network.selectNodes([found.id]);network.focus(found.id,{scale:1.55,animation:true});show(found.id);setStatus(`Focused ${meta[found.id]?.display_label||meta[found.id]?.label||found.id}.`);}
+async function openPaper(n){if(!n||n.type!=='paper'||!n.paper_id)return;try{const r=await fetch(`http://127.0.0.1:8766/api/open_pdf?id=${encodeURIComponent(n.paper_id)}`,{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);}catch(e){alert('Could not open the original PDF. Start the Review Literature App first.\n\n'+e);}}
+function show(id){const n=meta[id];if(!n)return;const open=n.type==='paper'?'<button id="openPdfBtn">Open original PDF</button><div class="muted">Double-click this paper node to open immediately.</div>':'';document.getElementById('detail').innerHTML=`<div class="detail"><b>${esc(n.display_label||n.label||n.id)}</b><br><span class="badge">${esc(n.type)}</span><br>${Object.entries(n).filter(([k,v])=>!['id','label','type','display_label','node_size'].includes(k)&&v!==null&&v!==''&&JSON.stringify(v)!=='[]').map(([k,v])=>`<b>${esc(k)}</b>: ${esc(typeof v==='object'?JSON.stringify(v):v)}<br>`).join('')}<button id="expandSelectedBtn">Expand 1-hop</button>${open}</div>`;const x=document.getElementById('expandSelectedBtn');if(x)x.onclick=()=>expandNode(id);const b=document.getElementById('openPdfBtn');if(b)b.onclick=()=>openPaper(n);}
+[...document.querySelectorAll('[data-type],[data-rel]')].forEach(x=>x.onchange=()=>{refreshNodeVisibility();rebuildEdges();});document.getElementById('fit').onclick=()=>network.fit({animation:true});document.getElementById('physics').onclick=()=>setPhysics(!physics);document.getElementById('collapse').onclick=collapseToPapers;document.getElementById('findBtn').onclick=focusQuery;document.getElementById('findQuery').addEventListener('keydown',e=>{if(e.key==='Enter')focusQuery();});network.on('click',p=>{if(p.nodes.length)show(p.nodes[0]);});network.on('doubleClick',p=>{if(!p.nodes.length)return;const n=meta[p.nodes[0]];if(n&&n.type==='paper')openPaper(n);else expandNode(p.nodes[0]);});network.once('stabilizationIterationsDone',()=>{setPhysics(false);setStatus('Paper overview ready. Click a node, then expand its neighborhood.');});refreshNodeVisibility();rebuildEdges();
+</script></body></html>'''
     replacements = {
         "__VIS_JS__": script_src,
         "__NODES__": json.dumps(vis_nodes, ensure_ascii=False),
@@ -418,12 +473,13 @@ const nodeArray=__NODES__,edgeArray=__EDGES__,meta=__META__,types=__TYPES__,rela
         "__META__": json.dumps({node["id"]: node for node in payload["nodes"]}, ensure_ascii=False),
         "__TYPES__": json.dumps(type_list),
         "__RELATIONS__": json.dumps(relation_list, ensure_ascii=False),
+        "__EXPAND_LIMIT__": str(expand_limit),
+        "__PHYSICS_THRESHOLD__": str(physics_threshold),
     }
     for key, value in replacements.items():
         html_doc = html_doc.replace(key, value)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html_doc, encoding="utf-8")
-
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build a scientific knowledge graph from structured paper evidence.")
@@ -433,6 +489,8 @@ def main() -> None:
     args = ap.parse_args()
     config, root = load_config(args.config)
     paths = get_paths(config, root)
+    curated_dir = paths.get("curated", root / "data/curated")
+    use_curated = bool(config.get("curation", {}).get("enabled", True) and config.get("curation", {}).get("use_curated_for_graphs", True))
     cfg = dict(config.get("knowledge_graph", {}))
     if args.infer_claim_relations:
         cfg["infer_claim_relations"] = True
@@ -456,8 +514,12 @@ def main() -> None:
     for row in rows:
         paper_id = row["paper_id"]
         paper_path = paths["paper_json"] / f"{paper_id}.json"
-        inventory_path = paths["extracted"] / f"{paper_id}.inventory.json"
-        evidence_path = paths["extracted"] / f"{paper_id}.evidence.json"
+        raw_inventory_path = paths["extracted"] / f"{paper_id}.inventory.json"
+        raw_evidence_path = paths["extracted"] / f"{paper_id}.evidence.json"
+        curated_inventory_path = curated_dir / f"{paper_id}.inventory.json"
+        curated_evidence_path = curated_dir / f"{paper_id}.evidence.json"
+        inventory_path = curated_inventory_path if use_curated and curated_inventory_path.exists() else raw_inventory_path
+        evidence_path = curated_evidence_path if use_curated and curated_evidence_path.exists() else raw_evidence_path
         metadata_path = metadata_dir / f"{paper_id}.metadata.json"
         visual_path = visual_dir / f"{paper_id}.visual.json"
         reference_path = reference_dir / f"{paper_id}.references.json"
@@ -477,11 +539,13 @@ def main() -> None:
             paper_node,
             "paper",
             canonical.get("title") or paper_id,
-            display_label=paper_id,
+            display_label=paper_display_label(canonical, paper_id),
             paper_id=paper_id,
             year=canonical.get("year"),
             journal=canonical.get("journal"),
             doi=canonical.get("doi"),
+            source_relpath=row["source_relpath"],
+            original_filename=row["original_filename"],
             article_type=inventory.get("article_type"),
             node_size=18,
         )
@@ -695,7 +759,13 @@ def main() -> None:
         "provenance": {
             "claim_relation_inference_enabled": bool(cfg.get("infer_claim_relations", False)),
         },
+        "gui": {
+            "initial_mode": "papers",
+            "expand_limit": int((cfg.get("gui") or {}).get("expand_limit", 400)),
+            "physics_disable_threshold": int((cfg.get("gui") or {}).get("physics_disable_threshold", 450)),
+        },
     }
+    payload.setdefault("provenance", {})["curation_enabled"] = use_curated
     write_json(out_dir / "knowledge.json", payload)
     write_tables(out_dir, node_list, edges)
     local_js = root / "assets/vis-network.min.js"
