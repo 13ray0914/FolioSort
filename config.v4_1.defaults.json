@@ -16,7 +16,31 @@
     "gui": {
       "initial_mode": "papers",
       "expand_limit": 400,
-      "physics_disable_threshold": 450
+      "physics_disable_threshold": 450,
+      "paper_font_size": 18,
+      "paper_node_size": 24,
+      "other_font_size": 12,
+      "history_limit": 60
     }
+  },
+  "multiplex_graph": {
+    "keyword": {
+      "top_k_per_paper": 7,
+      "min_jaccard": 0.15
+    },
+    "layer_weights": {
+      "keyword": 0.25
+    }
+  },
+  "projects": {
+    "enabled": true,
+    "default_slug": "default",
+    "raw_pdf_subdir": "projects",
+    "outputs_subdir": "outputs/projects"
+  },
+  "summary_memory": {
+    "merge_max_levels": 16,
+    "merge_retry_depth": 2,
+    "merge_force_item_chars": 8000
   }
 }

@@ -1,11 +1,25 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+# Re-exec user-facing scripts with the project's virtualenv.
+# This avoids PATH/pyenv selecting a Python build without required stdlib extensions
+# such as _sqlite3. The pipeline wrapper already activates this venv; this guard
+# makes direct ./scripts/*.py invocation equally reliable.
+import os as _bootstrap_os
+import sys as _bootstrap_sys
+from pathlib import Path as _BootstrapPath
+_BOOT_ROOT = _BootstrapPath(__file__).resolve().parents[1]
+_BOOT_VENV = _BOOT_ROOT / ".venv"
+_BOOT_PY = _BOOT_VENV / "bin" / "python"
+if _BOOT_PY.exists() and _BootstrapPath(_bootstrap_sys.prefix).resolve() != _BOOT_VENV.resolve():
+    _bootstrap_os.execv(str(_BOOT_PY), [str(_BOOT_PY), str(_BootstrapPath(__file__).resolve()), *_bootstrap_sys.argv[1:]])
+
 import argparse
 import csv
 import html
 import json
 import math
+import os
 import shutil
 import sqlite3
 import sys
@@ -23,8 +37,9 @@ sys.path.insert(0, str(ROOT))
 
 from lib.pipeline_common import get_paths, load_config, normalize_key, read_json, write_json
 from lib.v4_common import normalize_doi, normalize_openalex_id, normalize_title
+from lib.projects import ensure_project_schema, normalize_project_slug, project_name, project_network_dir, project_rows
 
-SCRIPT_VERSION = "multiplex-network-v4.1.0-curated-author-year-labels-pdf-open-graphml-safe"
+SCRIPT_VERSION = "multiplex-network-v4.1.1-project-scoped-curated-keywords-graphml-safe"
 
 
 def first_author_family(authors: list[Any] | None) -> str:
@@ -241,6 +256,7 @@ def cluster_labels(nodes: dict[str, dict[str, Any]], membership: dict[str, int])
         for paper_id in paper_ids:
             counter.update("property:" + x for x in nodes[paper_id]["properties"])
             counter.update("method:" + x for x in nodes[paper_id]["methods"])
+            counter.update("keyword:" + x for x in nodes[paper_id].get("keywords", []))
         terms = [term.split(":", 1)[1] for term, _ in counter.most_common(4)]
         labels[cluster_id] = " / ".join(terms) if terms else f"cluster {cluster_id + 1}"
     return labels
@@ -271,6 +287,7 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
         "semantic": "#8b5cf6",
         "property": "#14b8a6",
         "method": "#3b82f6",
+        "keyword": "#eab308",
         "bibliographic_coupling": "#9ca3af",
     }
     vis_edges = []
@@ -295,9 +312,9 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
     html_doc = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Multiplex Literature Network</title><script src="__VIS_JS__"></script><style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;color:#e5e7eb;font-family:Inter,Segoe UI,Arial,sans-serif}#network{position:absolute;inset:0 380px 0 0;background:#151515}#side{position:absolute;right:0;top:0;bottom:0;width:380px;background:rgba(22,22,24,.98);border-left:1px solid #333;padding:18px;box-sizing:border-box;overflow:auto;box-shadow:-12px 0 28px rgba(0,0,0,.22)}h2{font-size:18px;margin:0 0 12px}.muted{color:#9ca3af;font-size:12px}.section{border-top:1px solid #333;margin-top:16px;padding-top:14px}select,input,button{width:100%;box-sizing:border-box;background:#232326;color:#eee;border:1px solid #3c3c42;border-radius:7px;padding:9px;margin:5px 0}button{cursor:pointer}.row{display:flex;gap:7px}.row button{width:50%}.check{display:flex;align-items:center;gap:7px;font-size:13px;margin:7px 0}.check input{width:auto;margin:0}.badge{display:inline-block;padding:3px 7px;border-radius:12px;background:#2c2c32;margin:2px;font-size:11px}.claim{font-size:12px;line-height:1.45;margin:8px 0;color:#d1d5db}.legend{display:flex;align-items:center;gap:7px;font-size:11px;margin:5px 0}.dot{width:10px;height:10px;border-radius:50%}.openpdf{margin-top:10px;background:#303037;border-color:#5b5b66;font-weight:600}.openpdf:hover{border-color:#a3a3b0}#status{position:absolute;left:12px;bottom:10px;background:rgba(20,20,20,.7);padding:7px 10px;border-radius:7px;font-size:11px;color:#aaa;pointer-events:none}</style></head><body>
-<div id="network"></div><div id="status"></div><div id="side"><h2>Multiplex Literature Network</h2><div class="muted">Leiden clustering over separate citation, semantic, property, method, and coupling layers.</div><div class="section"><label>Find paper</label><select id="paperSearch"></select><label>Cluster</label><select id="clusterFilter"></select><div class="row"><button id="fitBtn">Fit</button><button id="physicsBtn">Physics: on</button></div><button id="resetBtn">Reset filters</button></div>
-<div class="section"><b>Layers</b><label class="check"><input type="checkbox" data-rel="citation" checked>Citation</label><label class="check"><input type="checkbox" data-rel="semantic" checked>SPECTER2 semantic</label><label class="check"><input type="checkbox" data-rel="property" checked>Property overlap</label><label class="check"><input type="checkbox" data-rel="method" checked>Method overlap</label><label class="check"><input type="checkbox" data-rel="bibliographic_coupling" checked>Bibliographic coupling</label></div><div class="section"><b>Clusters</b><div id="legend"></div></div><div class="section"><b>Selected paper</b><div id="detail" class="muted">Click a node.</div></div></div>
-<script>const nodeArray=__NODES__;const edgeArray=__EDGES__;const nodeMeta=__NODE_META__;const clusterMeta=__CLUSTER_META__;const clusterColors=__CLUSTER_COLORS__;const nodes=new vis.DataSet(nodeArray),edges=new vis.DataSet(edgeArray);const options={interaction:{hover:true,multiselect:true,tooltipDelay:180},physics:{enabled:true,solver:'forceAtlas2Based',forceAtlas2Based:{gravitationalConstant:-58,centralGravity:.008,springLength:125,springConstant:.04,damping:.42,avoidOverlap:.45},stabilization:{iterations:600}},nodes:{shape:'dot',scaling:{min:7,max:31}},edges:{smooth:{enabled:true,type:'continuous',roundness:.25},scaling:{min:.5,max:5}}};const network=new vis.Network(document.getElementById('network'),{nodes,edges},options);let physics=true;const search=document.getElementById('paperSearch');search.innerHTML='<option value="">— select —</option>'+Object.values(nodeMeta).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).map(n=>`<option value="${n.paper_id}">${esc(n.display_label||n.paper_id)} · ${(n.title||'').slice(0,72)}</option>`).join('');const cf=document.getElementById('clusterFilter');cf.innerHTML='<option value="all">All clusters</option>'+Object.values(clusterMeta).sort((a,b)=>a.cluster_id-b.cluster_id).map(c=>`<option value="${c.cluster_id}">C${c.cluster_id+1}: ${c.label} (${c.size})</option>`).join('');document.getElementById('legend').innerHTML=Object.values(clusterMeta).sort((a,b)=>a.cluster_id-b.cluster_id).map(c=>`<div class="legend"><span class="dot" style="background:${clusterColors[c.cluster_id]}"></span><span>C${c.cluster_id+1}: ${c.label} (${c.size})</span></div>`).join('');function activeRels(){return new Set([...document.querySelectorAll('[data-rel]')].filter(x=>x.checked).map(x=>x.dataset.rel));}function applyFilters(){const rel=activeRels(),cluster=cf.value;nodes.forEach(n=>nodes.update({id:n.id,hidden:cluster!=='all'&&String(n.cluster)!==cluster}));edges.forEach(e=>edges.update({id:e.id,hidden:!e.relations.some(r=>rel.has(r))}));}document.querySelectorAll('[data-rel]').forEach(x=>x.addEventListener('change',applyFilters));cf.addEventListener('change',()=>{applyFilters();network.fit({animation:true});});search.addEventListener('change',()=>{if(!search.value)return;nodes.update({id:search.value,hidden:false});network.selectNodes([search.value]);network.focus(search.value,{scale:1.65,animation:true});showDetail(search.value);});document.getElementById('fitBtn').onclick=()=>network.fit({animation:true});document.getElementById('physicsBtn').onclick=()=>{physics=!physics;network.setOptions({physics:{enabled:physics}});document.getElementById('physicsBtn').textContent='Physics: '+(physics?'on':'off');};document.getElementById('resetBtn').onclick=()=>{cf.value='all';document.querySelectorAll('[data-rel]').forEach(x=>x.checked=true);applyFilters();network.fit({animation:true});};function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}async function openOriginalPdf(id){const n=nodeMeta[id];if(!n)return;const status=document.getElementById('status');status.textContent=`Opening ${n.display_label||id}…`;try{const r=await fetch(`http://127.0.0.1:8766/api/open_pdf?id=${encodeURIComponent(id)}`,{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);status.textContent=`Opened ${n.display_label||id}`;}catch(e){status.textContent='PDF opener is not running. Start Review Literature App.';alert('Could not open the original PDF. Start the Review Literature App first.\n\n'+e);}}function showDetail(id){const n=nodeMeta[id];if(!n)return;const props=(n.properties||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const methods=(n.methods||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const claims=(n.claims||[]).slice(0,6).map(x=>`<div class="claim">• ${esc(x)}</div>`).join('');document.getElementById('detail').innerHTML=`<div><b>${esc(n.display_label||n.paper_id)}</b> <span class="muted">(${esc(n.paper_id)})</span></div><div style="font-size:14px;margin:8px 0"><b>${esc(n.title||'(untitled)')}</b></div><div class="muted">${esc(n.journal||'')}<br>${esc(n.doi||'')}<br>${esc(n.original_filename||n.source_relpath||'')}<br>Cluster C${n.cluster_id+1}: ${esc(n.cluster_label)}<br>Validation: ${esc(n.validation_status||'')}</div><button class="openpdf" id="openPdfBtn">Open original PDF</button><div class="muted" style="margin-top:5px">Double-click the node to open immediately.</div><div style="margin-top:8px"><b>Properties</b><br>${props||'—'}<br><b>Methods</b><br>${methods||'—'}</div><div class="section"><b>Representative claims</b>${claims||'<div class="muted">No claims extracted.</div>'}</div>`;document.getElementById('openPdfBtn').onclick=()=>openOriginalPdf(id);}network.on('click',p=>{if(p.nodes.length)showDetail(p.nodes[0]);});network.on('doubleClick',p=>{if(p.nodes.length)openOriginalPdf(p.nodes[0]);});network.on('stabilizationProgress',p=>document.getElementById('status').textContent=`Stabilizing ${Math.round(100*p.iterations/p.total)}%`);network.once('stabilizationIterationsDone',()=>{document.getElementById('status').textContent=`${nodes.length} papers · ${edges.length} edges`;});</script></body></html>'''
+<div id="network"></div><div id="status"></div><div id="side"><h2>Multiplex Literature Network</h2><div class="muted"><b>Project:</b> __PROJECT_LABEL__<br>Leiden clustering over separate citation, SPECTER2 semantic, property, method, keyword, and bibliographic-coupling layers.</div><div class="section"><label>Find paper</label><select id="paperSearch"></select><label>Cluster</label><select id="clusterFilter"></select><div class="row"><button id="fitBtn">Fit</button><button id="physicsBtn">Physics: on</button></div><button id="resetBtn">Reset filters</button></div>
+<div class="section"><b>Layers</b><label class="check"><input type="checkbox" data-rel="citation" checked>Citation</label><label class="check"><input type="checkbox" data-rel="semantic" checked>SPECTER2 semantic</label><label class="check"><input type="checkbox" data-rel="property" checked>Property overlap</label><label class="check"><input type="checkbox" data-rel="method" checked>Method overlap</label><label class="check"><input type="checkbox" data-rel="keyword" checked>Keyword overlap</label><label class="check"><input type="checkbox" data-rel="bibliographic_coupling" checked>Bibliographic coupling</label></div><div class="section"><b>Clusters</b><div id="legend"></div></div><div class="section"><b>Selected paper</b><div id="detail" class="muted">Click a node.</div></div></div>
+<script>const nodeArray=__NODES__;const edgeArray=__EDGES__;const nodeMeta=__NODE_META__;const clusterMeta=__CLUSTER_META__;const clusterColors=__CLUSTER_COLORS__;const nodes=new vis.DataSet(nodeArray),edges=new vis.DataSet(edgeArray);const options={interaction:{hover:true,multiselect:true,tooltipDelay:180},physics:{enabled:true,solver:'forceAtlas2Based',forceAtlas2Based:{gravitationalConstant:-58,centralGravity:.008,springLength:125,springConstant:.04,damping:.42,avoidOverlap:.45},stabilization:{iterations:600}},nodes:{shape:'dot',scaling:{min:7,max:31}},edges:{smooth:{enabled:true,type:'continuous',roundness:.25},scaling:{min:.5,max:5}}};const network=new vis.Network(document.getElementById('network'),{nodes,edges},options);let physics=true;const search=document.getElementById('paperSearch');search.innerHTML='<option value="">— select —</option>'+Object.values(nodeMeta).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).map(n=>`<option value="${n.paper_id}">${esc(n.display_label||n.paper_id)} · ${(n.title||'').slice(0,72)}</option>`).join('');const cf=document.getElementById('clusterFilter');cf.innerHTML='<option value="all">All clusters</option>'+Object.values(clusterMeta).sort((a,b)=>a.cluster_id-b.cluster_id).map(c=>`<option value="${c.cluster_id}">C${c.cluster_id+1}: ${c.label} (${c.size})</option>`).join('');document.getElementById('legend').innerHTML=Object.values(clusterMeta).sort((a,b)=>a.cluster_id-b.cluster_id).map(c=>`<div class="legend"><span class="dot" style="background:${clusterColors[c.cluster_id]}"></span><span>C${c.cluster_id+1}: ${c.label} (${c.size})</span></div>`).join('');function activeRels(){return new Set([...document.querySelectorAll('[data-rel]')].filter(x=>x.checked).map(x=>x.dataset.rel));}function applyFilters(){const rel=activeRels(),cluster=cf.value;nodes.forEach(n=>nodes.update({id:n.id,hidden:cluster!=='all'&&String(n.cluster)!==cluster}));edges.forEach(e=>edges.update({id:e.id,hidden:!e.relations.some(r=>rel.has(r))}));}document.querySelectorAll('[data-rel]').forEach(x=>x.addEventListener('change',applyFilters));cf.addEventListener('change',()=>{applyFilters();network.fit({animation:true});});search.addEventListener('change',()=>{if(!search.value)return;nodes.update({id:search.value,hidden:false});network.selectNodes([search.value]);network.focus(search.value,{scale:1.65,animation:true});showDetail(search.value);});document.getElementById('fitBtn').onclick=()=>network.fit({animation:true});document.getElementById('physicsBtn').onclick=()=>{physics=!physics;network.setOptions({physics:{enabled:physics}});document.getElementById('physicsBtn').textContent='Physics: '+(physics?'on':'off');};document.getElementById('resetBtn').onclick=()=>{cf.value='all';document.querySelectorAll('[data-rel]').forEach(x=>x.checked=true);applyFilters();network.fit({animation:true});};function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}async function openOriginalPdf(id){const n=nodeMeta[id];if(!n)return;const status=document.getElementById('status');status.textContent=`Opening ${n.display_label||id}…`;try{const r=await fetch(`http://127.0.0.1:8766/api/open_pdf?id=${encodeURIComponent(id)}`,{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);status.textContent=`Opened ${n.display_label||id}`;}catch(e){status.textContent='PDF opener is not running. Start Review Literature App.';alert('Could not open the original PDF. Start the Review Literature App first.\n\n'+e);}}function showDetail(id){const n=nodeMeta[id];if(!n)return;const props=(n.properties||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const methods=(n.methods||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const keywords=(n.keywords||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const claims=(n.claims||[]).slice(0,6).map(x=>`<div class="claim">• ${esc(x)}</div>`).join('');document.getElementById('detail').innerHTML=`<div><b>${esc(n.display_label||n.paper_id)}</b> <span class="muted">(${esc(n.paper_id)})</span></div><div style="font-size:14px;margin:8px 0"><b>${esc(n.title||'(untitled)')}</b></div><div class="muted">${esc(n.journal||'')}<br>${esc(n.doi||'')}<br>${esc(n.original_filename||n.source_relpath||'')}<br>Cluster C${n.cluster_id+1}: ${esc(n.cluster_label)}<br>Validation: ${esc(n.validation_status||'')}</div><button class="openpdf" id="openPdfBtn">Open original PDF</button><button id="curateBtn">Edit terms / claims</button><div class="muted" style="margin-top:5px">Double-click the node to open the PDF. Curation edits are append-only.</div><div style="margin-top:8px"><b>Properties</b><br>${props||'—'}<br><b>Methods</b><br>${methods||'—'}<br><b>Keywords</b><br>${keywords||'—'}</div><div class="section"><b>Representative claims</b>${claims||'<div class="muted">No claims extracted.</div>'}</div>`;document.getElementById('openPdfBtn').onclick=()=>openOriginalPdf(id);document.getElementById('curateBtn').onclick=async()=>{try{await fetch('http://127.0.0.1:8766/api/start_curation',{method:'POST'});window.open(`http://127.0.0.1:8765/?paper=${encodeURIComponent(id)}`,'_blank')}catch(e){alert('Start Review Literature App before opening the curation editor.\n\n'+e)}};}network.on('click',p=>{if(p.nodes.length)showDetail(p.nodes[0]);});network.on('doubleClick',p=>{if(p.nodes.length)openOriginalPdf(p.nodes[0]);});network.on('stabilizationProgress',p=>document.getElementById('status').textContent=`Stabilizing ${Math.round(100*p.iterations/p.total)}%`);network.once('stabilizationIterationsDone',()=>{document.getElementById('status').textContent=`${nodes.length} papers · ${edges.length} edges`;});</script></body></html>'''
     replacements = {
         "__VIS_JS__": script_src,
         "__NODES__": json.dumps(vis_nodes, ensure_ascii=False),
@@ -305,6 +322,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;col
         "__NODE_META__": json.dumps({node["paper_id"]: node for node in payload["nodes"]}, ensure_ascii=False),
         "__CLUSTER_META__": json.dumps({str(item["cluster_id"]): item for item in clusters}, ensure_ascii=False),
         "__CLUSTER_COLORS__": json.dumps({str(key): value for key, value in color_by_cluster.items()}),
+        "__PROJECT_LABEL__": html.escape(str((payload.get("project") or {}).get("name") or "All papers")),
     }
     for key, value in replacements.items():
         html_doc = html_doc.replace(key, value)
@@ -313,8 +331,9 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;col
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Build a SPECTER2/citation/property/method multiplex graph and Leiden clusters.")
+    ap = argparse.ArgumentParser(description="Build a SPECTER2/citation/property/method/keyword multiplex graph and Leiden clusters.")
     ap.add_argument("--config", default=str(ROOT / "config.json"))
+    ap.add_argument("--project", default=None, help="Build only one project. REVIEW_PROJECT is used when omitted.")
     args = ap.parse_args()
     config, root = load_config(args.config)
     paths = get_paths(config, root)
@@ -324,12 +343,21 @@ def main() -> None:
     metadata_dir = paths.get("metadata", root / "data/metadata")
     reference_dir = paths.get("reference_matches", root / "data/reference_matches")
     embedding_dir = paths.get("embeddings", root / "data/embeddings")
-    out_dir = paths.get("network_gui", root / "outputs/network_gui")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    project_arg = args.project or os.environ.get("REVIEW_PROJECT")
+    project_slug = normalize_project_slug(project_arg) if project_arg else None
 
     conn = sqlite3.connect(paths["database"])
     conn.row_factory = sqlite3.Row
-    rows = conn.execute("SELECT * FROM papers WHERE active=1 ORDER BY paper_id").fetchall()
+    ensure_project_schema(conn)
+    if project_slug:
+        rows = project_rows(conn, project_slug, active_only=True)
+        selected_project_name = project_name(conn, project_slug)
+        out_dir = project_network_dir(root, project_slug)
+    else:
+        rows = conn.execute("SELECT * FROM papers WHERE active=1 ORDER BY paper_id").fetchall()
+        selected_project_name = "All papers"
+        out_dir = paths.get("network_gui", root / "outputs/network_gui")
+    out_dir.mkdir(parents=True, exist_ok=True)
     allowed = set(cfg.get("include_validation_status", ["pass", "review_required"]))
     nodes: dict[str, dict[str, Any]] = {}
     reference_payloads: dict[str, dict[str, Any]] = {}
@@ -360,6 +388,7 @@ def main() -> None:
         canonical = metadata.get("canonical") or paper.get("metadata") or {}
         properties = sorted(normalized_set(inventory.get("studied_properties", []), "property_normalized", "property_raw"))
         methods = sorted(normalized_set(inventory.get("methods", []), "method_normalized", "method_raw"))
+        keywords = sorted(normalized_set(inventory.get("keywords", []), "keyword_normalized", "keyword_raw"))
         claims = [item.get("statement") for item in evidence.get("claims", []) if item.get("statement")]
         authors = canonical.get("authors") or (paper.get("metadata") or {}).get("authors") or []
         year = canonical.get("year") or row["year"]
@@ -377,20 +406,22 @@ def main() -> None:
             "validation_status": status,
             "properties": properties,
             "methods": methods,
+            "keywords": keywords,
             "claims": claims,
             "central_question": memory.get("central_question"),
         }
         reference_payloads[paper_id] = read_json(reference_path) if reference_path.exists() else {"references": []}
 
     ids = sorted(nodes)
-    if len(ids) < 2:
-        raise SystemExit(f"Need at least two fully processed papers; found {len(ids)}")
+    if not ids:
+        raise SystemExit(f"No fully processed papers found for project {project_slug or 'all'}")
 
     layers: dict[str, dict[tuple[str, str], float]] = {
         "citation": {},
         "semantic": {},
         "property": {},
         "method": {},
+        "keyword": {},
         "bibliographic_coupling": {},
     }
     citation_directions: dict[tuple[str, str], set[str]] = defaultdict(set)
@@ -427,6 +458,7 @@ def main() -> None:
 
     property_cfg = cfg.get("property", {})
     method_cfg = cfg.get("method", {})
+    keyword_cfg = cfg.get("keyword", {})
     layers["property"] = jaccard_edges(
         {paper_id: set(nodes[paper_id]["properties"]) for paper_id in ids},
         ids,
@@ -438,6 +470,12 @@ def main() -> None:
         ids,
         top_k=int(method_cfg.get("top_k_per_paper", 7)),
         threshold=float(method_cfg.get("min_jaccard", 0.18)),
+    )
+    layers["keyword"] = jaccard_edges(
+        {paper_id: set(nodes[paper_id].get("keywords", [])) for paper_id in ids},
+        ids,
+        top_k=int(keyword_cfg.get("top_k_per_paper", 7)),
+        threshold=float(keyword_cfg.get("min_jaccard", 0.15)),
     )
 
     coupling_cfg = cfg.get("bibliographic_coupling", {})
@@ -456,7 +494,7 @@ def main() -> None:
 
     layer_weights = cfg.get(
         "layer_weights",
-        {"citation": 1.3, "semantic": 0.75, "property": 0.45, "method": 0.35, "bibliographic_coupling": 0.45},
+        {"citation": 1.3, "semantic": 0.75, "property": 0.45, "method": 0.35, "keyword": 0.25, "bibliographic_coupling": 0.45},
     )
     clustering_cfg = cfg.get("clustering", {})
     membership_values = cluster_multiplex(
@@ -529,7 +567,8 @@ def main() -> None:
         "clusters": clusters,
         "layers": {name: [{"source": key[0], "target": key[1], "weight": value} for key, value in edge_map.items()] for name, edge_map in layers.items()},
         "layer_weights": layer_weights,
-        "provenance": {"script_version": SCRIPT_VERSION, "algorithm": "Leiden multiplex", "curation_enabled": use_curated},
+        "project": {"slug": project_slug, "name": selected_project_name},
+        "provenance": {"script_version": SCRIPT_VERSION, "algorithm": "Leiden multiplex", "curation_enabled": use_curated, "project_slug": project_slug},
     }
     write_json(out_dir / "network.json", payload)
 
@@ -540,7 +579,7 @@ def main() -> None:
         for node in payload_nodes:
             writer.writerow({key: node.get(key) for key in fields})
     with (out_dir / "edges.csv").open("w", encoding="utf-8-sig", newline="") as file:
-        fields = ["source", "target", "combined_weight", "citation", "semantic", "property", "method", "bibliographic_coupling", "shared_references", "directions"]
+        fields = ["source", "target", "combined_weight", "citation", "semantic", "property", "method", "keyword", "bibliographic_coupling", "shared_references", "directions"]
         writer = csv.DictWriter(file, fieldnames=fields)
         writer.writeheader()
         for edge in edges:
@@ -553,6 +592,7 @@ def main() -> None:
                     "semantic": edge["components"].get("semantic", 0),
                     "property": edge["components"].get("property", 0),
                     "method": edge["components"].get("method", 0),
+                    "keyword": edge["components"].get("keyword", 0),
                     "bibliographic_coupling": edge["components"].get("bibliographic_coupling", 0),
                     "shared_references": edge.get("shared_references", 0),
                     "directions": ";".join(edge.get("directions", [])),
@@ -588,6 +628,7 @@ def main() -> None:
     else:
         local_asset = None
     make_gui(out_dir / "network.html", payload, local_asset)
+    print(f"Project : {selected_project_name} ({project_slug or 'all'})")
     print(f"Papers  : {len(ids)}")
     for name, edge_map in layers.items():
         print(f"Layer {name:24s}: {len(edge_map)} edges")

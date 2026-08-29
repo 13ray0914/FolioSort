@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+# Re-exec user-facing scripts with the project's virtualenv.
+# This avoids PATH/pyenv selecting a Python build without required stdlib extensions
+# such as _sqlite3. The pipeline wrapper already activates this venv; this guard
+# makes direct ./scripts/*.py invocation equally reliable.
+import os as _bootstrap_os
+import sys as _bootstrap_sys
+from pathlib import Path as _BootstrapPath
+_BOOT_ROOT = _BootstrapPath(__file__).resolve().parents[1]
+_BOOT_VENV = _BOOT_ROOT / ".venv"
+_BOOT_PY = _BOOT_VENV / "bin" / "python"
+if _BOOT_PY.exists() and _BootstrapPath(_bootstrap_sys.prefix).resolve() != _BOOT_VENV.resolve():
+    _bootstrap_os.execv(str(_BOOT_PY), [str(_BOOT_PY), str(_BootstrapPath(__file__).resolve()), *_bootstrap_sys.argv[1:]])
+
 import argparse
 import sys
 from pathlib import Path

@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+# Re-exec user-facing scripts with the project's virtualenv.
+# This avoids PATH/pyenv selecting a Python build without required stdlib extensions
+# such as _sqlite3. The pipeline wrapper already activates this venv; this guard
+# makes direct ./scripts/*.py invocation equally reliable.
+import os as _bootstrap_os
+import sys as _bootstrap_sys
+from pathlib import Path as _BootstrapPath
+_BOOT_ROOT = _BootstrapPath(__file__).resolve().parents[1]
+_BOOT_VENV = _BOOT_ROOT / ".venv"
+_BOOT_PY = _BOOT_VENV / "bin" / "python"
+if _BOOT_PY.exists() and _BootstrapPath(_bootstrap_sys.prefix).resolve() != _BOOT_VENV.resolve():
+    _bootstrap_os.execv(str(_BOOT_PY), [str(_BOOT_PY), str(_BootstrapPath(__file__).resolve()), *_bootstrap_sys.argv[1:]])
+
 import argparse
 import json
 import math
@@ -39,6 +52,7 @@ from lib.pipeline_common import (
 
 STAGE = "summary_memory_v4"
 SCRIPT_VERSION = "summary-memory-v4.0.2-direct-retry"
+MERGE_GUARD_VERSION = "nonconvergence-guard-v1"
 
 
 def visual_chunk_memory(visual: dict[str, Any]) -> dict[str, Any] | None:
@@ -144,6 +158,36 @@ def batch_by_chars(items: list[dict[str, Any]], max_chars: int) -> list[list[dic
     return batches
 
 
+def compact_memory_for_merge(item: dict[str, Any], target_chars: int) -> dict[str, Any]:
+    """Deterministically compact a summary-memory object for emergency merge retries.
+
+    This is used only after hierarchical merging fails to reduce the number of
+    memories. It preserves keys and early evidence while bounding long strings
+    and lists so a forced pairwise merge can actually converge.
+    """
+    target_chars = max(2500, int(target_chars))
+
+    def shrink(value: Any, string_limit: int, list_limit: int) -> Any:
+        if isinstance(value, str):
+            if len(value) <= string_limit:
+                return value
+            return value[:string_limit].rstrip() + " …[compacted for merge]"
+        if isinstance(value, list):
+            kept = [shrink(x, string_limit, list_limit) for x in value[:list_limit]]
+            return kept
+        if isinstance(value, dict):
+            return {k: shrink(v, string_limit, list_limit) for k, v in value.items()}
+        return value
+
+    last = item
+    for string_limit, list_limit in [(1800, 8), (1200, 6), (800, 5), (500, 4), (300, 3), (180, 2)]:
+        candidate = shrink(item, string_limit, list_limit)
+        last = candidate
+        if len(json.dumps(candidate, ensure_ascii=False)) <= target_chars:
+            return candidate
+    return last
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build a two-level whole-paper summary memory before detailed extraction.")
     ap.add_argument("--config", default=str(ROOT / "config.json"))
@@ -177,6 +221,9 @@ def main() -> None:
     chunk_max_chars = int(cfg.get("chunk_max_chars", config["llm"].get("chunk_max_chars", 12000)))
     merge_max_chars = int(cfg.get("merge_max_chars", 24000))
     merge_output_tokens = int(cfg.get("merge_max_tokens", config["llm"].get("max_tokens", 20000)))
+    merge_max_levels = int(cfg.get("merge_max_levels", 16))
+    merge_retry_depth = int(cfg.get("merge_retry_depth", 2))
+    merge_force_item_chars = int(cfg.get("merge_force_item_chars", 8000))
     direct_enabled = bool(cfg.get("direct_enabled", True))
     direct_max_input_tokens = int(cfg.get("direct_max_input_tokens", 40000))
     direct_max_output_tokens = int(cfg.get("direct_max_output_tokens", 4000))
@@ -186,6 +233,11 @@ def main() -> None:
     adaptive_enabled = bool(adaptive_cfg.get("enabled", True))
     adaptive_max_depth = int(adaptive_cfg.get("max_depth", 5))
     adaptive_min_chars = int(adaptive_cfg.get("min_chars", 1800))
+    # These safety-only controls must not invalidate already-successful v4.0.1
+    # summary memories. They affect only failure/non-convergence handling.
+    summary_signature_cfg = dict(cfg)
+    for guard_key in ("merge_max_levels", "merge_retry_depth", "merge_force_item_chars"):
+        summary_signature_cfg.pop(guard_key, None)
 
     client = LlamaCppClient(config["llm"])
     model = client.healthcheck()
@@ -207,7 +259,7 @@ def main() -> None:
                 "max_tokens": config["llm"].get("max_tokens", 20000),
                 "enable_thinking": config["llm"].get("enable_thinking", False),
             },
-            "summary": cfg,
+            "summary": summary_signature_cfg,
             "prompt": prompt_version,
             "schema": schema_version,
         }
@@ -277,6 +329,8 @@ def main() -> None:
             "splits": 0,
             "leaf_chunks": 0,
             "merge_calls": 0,
+            "merge_passthroughs": 0,
+            "merge_compactions": 0,
             "direct_calls": 0,
             "direct_attempts": 0,
             "direct_retries": 0,
@@ -384,6 +438,12 @@ def main() -> None:
                 raise
 
         def merge_group(items: list[dict[str, Any]], merge_id: str, depth: int = 0) -> dict[str, Any]:
+            if not items:
+                raise RuntimeError(f"summary merge {merge_id} received no items")
+            if len(items) == 1:
+                stats["merge_passthroughs"] += 1
+                print(f"  MERGE-PASS  {paper_id} {merge_id} items=1", flush=True)
+                return items[0]
             merge_dir = paths["llm_raw"] / paper_id / "summary_memory" / "merges"
             out = merge_dir / f"{merge_id}.json"
             meta = merge_dir / f"{merge_id}.meta.json"
@@ -431,14 +491,20 @@ def main() -> None:
                     f"  MERGE-TRUNCATED {paper_id} {merge_id} {elapsed:.1f}s",
                     flush=True,
                 )
-                if len(items) <= 1:
+                if depth >= merge_retry_depth:
                     raise RuntimeError(
-                        f"summary merge {merge_id} truncated even with one item; increase merge_max_tokens"
+                        f"summary merge {merge_id} remained truncated after {depth} compact retries; "
+                        "aborting instead of entering a non-convergent merge loop"
                     ) from error
-                midpoint = max(1, len(items) // 2)
-                left = merge_group(items[:midpoint], merge_id + "a", depth + 1)
-                right = merge_group(items[midpoint:], merge_id + "b", depth + 1)
-                return merge_group([left, right], merge_id + "c", depth + 1)
+                retry_target = max(2500, merge_force_item_chars // (2 ** depth))
+                compacted = [compact_memory_for_merge(item, retry_target) for item in items]
+                stats["merge_compactions"] += len(compacted)
+                print(
+                    f"  MERGE-COMPACT {paper_id} {merge_id} retry={depth + 1} "
+                    f"target_per_item={retry_target}",
+                    flush=True,
+                )
+                return merge_group(compacted, merge_id + f"_compact{depth + 1}", depth + 1)
             except Exception as error:
                 elapsed = time.monotonic() - started
                 log_llm_run_finish(conn, run_id, "error", error=str(error))
@@ -579,15 +645,40 @@ def main() -> None:
                     current.append(merge_group(group, f"merge_l01_{index:04d}"))
                 level = 2
                 while len(current) > 1:
+                    if level > merge_max_levels:
+                        raise RuntimeError(
+                            f"summary merge exceeded {merge_max_levels} levels with {len(current)} items; "
+                            "aborting instead of looping indefinitely"
+                        )
                     next_level: list[dict[str, Any]] = []
                     for index, group in enumerate(batch_by_chars(current, merge_max_chars), start=1):
                         next_level.append(merge_group(group, f"merge_l{level:02d}_{index:04d}"))
-                    if len(next_level) >= len(current) and len(current) > 1:
-                        midpoint = max(1, len(current) // 2)
-                        next_level = [
-                            merge_group(current[:midpoint], f"merge_l{level:02d}_forced_a"),
-                            merge_group(current[midpoint:], f"merge_l{level:02d}_forced_b"),
-                        ]
+                    if len(next_level) >= len(current):
+                        print(
+                            f"  MERGE-NONCONVERGENT {paper_id} level={level} "
+                            f"items={len(current)} -> {len(next_level)}; forcing compact pairwise merge",
+                            flush=True,
+                        )
+                        forced: list[dict[str, Any]] = []
+                        for pair_index in range(0, len(current), 2):
+                            pair = current[pair_index : pair_index + 2]
+                            if len(pair) == 1:
+                                forced.append(pair[0])
+                                continue
+                            compacted = [compact_memory_for_merge(item, merge_force_item_chars) for item in pair]
+                            stats["merge_compactions"] += len(compacted)
+                            forced.append(
+                                merge_group(
+                                    compacted,
+                                    f"merge_l{level:02d}_forced_{pair_index // 2 + 1:04d}",
+                                )
+                            )
+                        next_level = forced
+                        if len(next_level) >= len(current):
+                            raise RuntimeError(
+                                f"summary merge could not reduce item count at level {level} "
+                                f"({len(current)} -> {len(next_level)}); stopped safely"
+                            )
                     current = next_level
                     level += 1
                 if not current:
@@ -606,6 +697,10 @@ def main() -> None:
                     "adaptive_leaf_chunks": stats["leaf_chunks"],
                     "adaptive_splits": stats["splits"],
                     "merge_calls": stats["merge_calls"],
+                    "merge_passthroughs": stats["merge_passthroughs"],
+                    "merge_compactions": stats["merge_compactions"],
+                    "merge_max_levels": merge_max_levels,
+                    "merge_guard_version": MERGE_GUARD_VERSION,
                     "direct_calls": stats["direct_calls"],
                     "direct_attempts": stats["direct_attempts"],
                     "direct_retries": stats["direct_retries"],

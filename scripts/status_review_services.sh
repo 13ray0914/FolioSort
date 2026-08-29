@@ -27,6 +27,7 @@ try:
     print('  MinerU          =',c.get('visual',{}).get('mineru',{}).get('enabled'))
     print('  curation        =',c.get('curation',{}).get('enabled',False))
     print('  curated graphs  =',c.get('curation',{}).get('use_curated_for_graphs',False))
+    print('  projects        =',c.get('projects',{}).get('enabled',False))
     print('Environments:')
     print('  main     =', (root/'.venv/bin/python').exists())
     print('  network  =', (root/'.venv_network/bin/python').exists())

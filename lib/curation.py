@@ -39,6 +39,8 @@ def entity_uid(paper_id: str, entity_type: str, item: dict[str, Any]) -> str:
         value = item.get("property_raw") or item.get("property_normalized")
     elif entity_type == "method":
         value = item.get("method_raw") or item.get("method_normalized")
+    elif entity_type == "keyword":
+        value = item.get("keyword_raw") or item.get("keyword_normalized") or item.get("value")
     elif entity_type == "claim":
         value = item.get("statement")
     elif entity_type == "measurement":
@@ -150,8 +152,8 @@ def read_event_log(events_path: Path) -> list[dict[str, Any]]:
 class Ontology:
     def __init__(self, ontology_path: Path, events: Iterable[dict[str, Any]] = ()):
         self.ontology_path = ontology_path
-        self.alias_maps: dict[str, dict[str, str]] = {"property": {}, "method": {}}
-        self.canonical_terms: dict[str, set[str]] = {"property": set(), "method": set()}
+        self.alias_maps: dict[str, dict[str, str]] = {"property": {}, "method": {}, "keyword": {}}
+        self.canonical_terms: dict[str, set[str]] = {"property": set(), "method": set(), "keyword": set()}
         if ontology_path.exists():
             payload = read_json(ontology_path)
             for term_type, rows in (payload.get("terms") or {}).items():
@@ -222,10 +224,28 @@ def apply_inventory(
     curated = copy.deepcopy(raw)
     grouped = _latest_entity_events(events, paper_id)
 
-    for entity_type, list_key, norm_key, raw_key in [
+    term_specs = [
         ("property", "studied_properties", "property_normalized", "property_raw"),
         ("method", "methods", "method_normalized", "method_raw"),
-    ]:
+        ("keyword", "keywords", "keyword_normalized", "keyword_raw"),
+    ]
+    # Keywords may be absent from the raw schema or represented as strings.
+    raw_keywords = curated.get("keywords") or curated.get("key_terms") or curated.get("topic_keywords") or []
+    if isinstance(raw_keywords, str):
+        raw_keywords = [x.strip() for x in re.split(r"[,;]", raw_keywords) if x.strip()]
+    keyword_items: list[dict[str, Any]] = []
+    for value in raw_keywords if isinstance(raw_keywords, list) else []:
+        if isinstance(value, dict):
+            item = copy.deepcopy(value)
+            raw_value = item.get("keyword_raw") or item.get("keyword_normalized") or item.get("value") or item.get("name")
+            item.setdefault("keyword_raw", raw_value)
+            item.setdefault("keyword_normalized", raw_value)
+            keyword_items.append(item)
+        elif value not in (None, ""):
+            keyword_items.append({"keyword_raw": str(value), "keyword_normalized": str(value), "evidence_sids": []})
+    curated["keywords"] = keyword_items
+
+    for entity_type, list_key, norm_key, raw_key in term_specs:
         new_items = []
         for item in _term_items_with_uids(paper_id, entity_type, curated.get(list_key, [])):
             uid = item["curation_uid"]
@@ -269,7 +289,7 @@ def apply_inventory(
                     "evidence_sids": list(new.get("evidence_sids") or []),
                 }
                 norm_field = "property_normalized"
-            else:
+            elif entity_type == "method":
                 item = {
                     "method_raw": value,
                     "method_normalized_original": None,
@@ -278,6 +298,14 @@ def apply_inventory(
                     "evidence_sids": list(new.get("evidence_sids") or []),
                 }
                 norm_field = "method_normalized"
+            else:
+                item = {
+                    "keyword_raw": value,
+                    "keyword_normalized_original": None,
+                    "keyword_normalized": canonical,
+                    "evidence_sids": list(new.get("evidence_sids") or []),
+                }
+                norm_field = "keyword_normalized"
             item["curation_uid"] = user_uid
             item["canonical_source"] = "user_added"
             item["curation_origin"] = "user_added"
@@ -325,14 +353,16 @@ def apply_evidence(
     claims = []
     for item in _term_items_with_uids(paper_id, "claim", curated.get("claims", [])):
         uid = item["curation_uid"]
-        item["statement_original"] = item.get("statement")
+        for original_field in ["statement", "claim_type", "subject", "relation", "object", "conditions_text"]:
+            item[original_field + "_original"] = item.get(original_field)
+        item["curated_tags_original"] = list(item.get("curated_tags") or [])
         hidden = False
         for event in grouped.get(("claim", uid), []):
             if event.get("event_type") == "claim_delete":
                 hidden = True
             elif event.get("event_type") == "claim_edit":
                 patch = event.get("new") or {}
-                for field in ["statement", "claim_type", "subject", "relation", "object", "conditions_text"]:
+                for field in ["statement", "claim_type", "subject", "relation", "object", "conditions_text", "review_status", "review_notes"]:
                     if field in patch:
                         item[field] = patch[field]
                 if "tags" in patch:
@@ -362,6 +392,8 @@ def apply_evidence(
             "evidence_sids": list(new.get("evidence_sids") or []),
             "curated_tags": list(new.get("tags") or []),
             "curation_origin": "user_added",
+            "review_status": new.get("review_status") or "edited",
+            "review_notes": new.get("review_notes"),
         }
         hidden = False
         for later in grouped.get(("claim", user_uid), []):
@@ -369,7 +401,7 @@ def apply_evidence(
                 hidden = True
             elif later.get("event_type") == "claim_edit":
                 patch = later.get("new") or {}
-                for field in ["statement", "claim_type", "subject", "relation", "object", "conditions_text"]:
+                for field in ["statement", "claim_type", "subject", "relation", "object", "conditions_text", "review_status", "review_notes"]:
                     if field in patch:
                         claim[field] = patch[field]
                 if "tags" in patch:

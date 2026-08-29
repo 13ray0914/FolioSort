@@ -1,12 +1,26 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+# Re-exec user-facing scripts with the project's virtualenv.
+# This avoids PATH/pyenv selecting a Python build without required stdlib extensions
+# such as _sqlite3. The pipeline wrapper already activates this venv; this guard
+# makes direct ./scripts/*.py invocation equally reliable.
+import os as _bootstrap_os
+import sys as _bootstrap_sys
+from pathlib import Path as _BootstrapPath
+_BOOT_ROOT = _BootstrapPath(__file__).resolve().parents[1]
+_BOOT_VENV = _BOOT_ROOT / ".venv"
+_BOOT_PY = _BOOT_VENV / "bin" / "python"
+if _BOOT_PY.exists() and _BootstrapPath(_bootstrap_sys.prefix).resolve() != _BOOT_VENV.resolve():
+    _bootstrap_os.execv(str(_BOOT_PY), [str(_BOOT_PY), str(_BootstrapPath(__file__).resolve()), *_bootstrap_sys.argv[1:]])
+
 import argparse
 import csv
 import hashlib
 import html
 import json
 import math
+import os
 import sqlite3
 import sys
 from collections import Counter, defaultdict
@@ -32,9 +46,10 @@ from lib.pipeline_common import (
     stable_json_hash,
     write_json,
 )
+from lib.projects import ensure_project_schema, normalize_project_slug, project_knowledge_dir, project_name, project_rows
 from lib.v4_common import ensure_v4_schema, now_iso
 
-SCRIPT_VERSION = "knowledge-graph-v4.1.0-curated-author-year-labels-progressive-gui-graphml-safe"
+SCRIPT_VERSION = "knowledge-graph-v4.1.1-project-scoped-curated-keywords-history-fonts-progressive-graphml-safe"
 
 
 def first_author_family(authors: list[Any] | None) -> str:
@@ -211,7 +226,8 @@ def candidate_claim_pairs(
                 continue
             score = float(sims[i, j])
             shared_properties = set(source.get("paper_properties", [])) & set(target.get("paper_properties", []))
-            effective = max(score, 0.38 if shared_properties else 0.0)
+            shared_keywords = set(source.get("paper_keywords", [])) & set(target.get("paper_keywords", []))
+            effective = max(score, 0.38 if shared_properties else 0.0, 0.32 if shared_keywords else 0.0)
             if effective < threshold:
                 continue
             key = (min(i, j), max(i, j))
@@ -319,7 +335,8 @@ def infer_relations(
         item for item in output
         if item.get("relation") != "unrelated" and float(item.get("confidence", 0.0)) >= minimum
     ]
-    conn.execute("DELETE FROM knowledge_relations_v4")
+    if not cfg.get("_project_slug"):
+        conn.execute("DELETE FROM knowledge_relations_v4")
     for item in selected:
         conn.execute(
             """
@@ -382,28 +399,35 @@ def write_tables(out_dir: Path, nodes: list[dict[str, Any]], edges: list[dict[st
 
 
 def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None) -> None:
-    """Write a progressive/lazy knowledge-graph GUI.
-
-    The complete graph remains embedded for offline use, but vis-network only
-    receives the small currently-visible subset.  Initial view contains paper
-    nodes (plus paper-to-paper citations); neighbors are added on demand.
-    """
+    """Write a progressive knowledge-graph GUI with reversible expansion."""
     type_colors = {
         "paper": "#8b5cf6",
         "claim": "#f97316",
         "property": "#14b8a6",
         "method": "#3b82f6",
+        "keyword": "#eab308",
         "system": "#ec4899",
         "measurement": "#eab308",
         "visual": "#84cc16",
     }
     shapes = {
         "paper": "dot", "claim": "diamond", "property": "hexagon", "method": "triangle",
-        "system": "box", "measurement": "star", "visual": "square",
+        "keyword": "ellipse", "system": "box", "measurement": "star", "visual": "square",
     }
+    gui_cfg = payload.get("gui", {})
+    paper_font_size = max(10, int(gui_cfg.get("paper_font_size", 18)))
+    paper_node_size = max(12, int(gui_cfg.get("paper_node_size", 24)))
+    other_font_size = max(8, int(gui_cfg.get("other_font_size", 12)))
+    history_limit = max(5, int(gui_cfg.get("history_limit", 60)))
+    expand_limit = max(50, int(gui_cfg.get("expand_limit", 400)))
+    physics_threshold = max(100, int(gui_cfg.get("physics_disable_threshold", 450)))
+
     vis_nodes = []
     for node in payload["nodes"]:
         node_type = node["type"]
+        base_value = float(node.get("node_size", 8))
+        if node_type == "paper":
+            base_value = max(base_value, float(paper_node_size))
         vis_nodes.append(
             {
                 "id": node["id"],
@@ -412,17 +436,18 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
                 "type": node_type,
                 "shape": shapes.get(node_type, "dot"),
                 "color": {"background": type_colors.get(node_type, "#9ca3af"), "border": "#d1d5db"},
-                "font": {"color": "#e5e7eb", "size": 12},
-                "value": node.get("node_size", 8),
+                "font": {"color": "#e5e7eb", "size": paper_font_size if node_type == "paper" else other_font_size},
+                "value": base_value,
+                "baseValue": float(node.get("node_size", 8)),
             }
         )
     edge_colors = {
         "CITES": "#ef4444", "HAS_CLAIM": "#6b7280", "STUDIES_PROPERTY": "#14b8a6",
-        "USES_METHOD": "#3b82f6", "STUDIES_SYSTEM": "#ec4899", "REPORTS_MEASUREMENT": "#eab308",
-        "MEASURES_PROPERTY": "#facc15", "MEASURED_ON": "#f59e0b", "HAS_VISUAL": "#84cc16",
-        "SUPPORTED_BY_VISUAL": "#84cc16", "CLAIM_ABOUT_SYSTEM": "#fb7185", "CLAIM_ABOUT_PROPERTY": "#2dd4bf",
-        "supports": "#22c55e", "contradicts": "#ef4444", "qualifies": "#f59e0b",
-        "extends": "#06b6d4", "same_observation_different_interpretation": "#a855f7",
+        "USES_METHOD": "#3b82f6", "HAS_KEYWORD": "#eab308", "STUDIES_SYSTEM": "#ec4899",
+        "REPORTS_MEASUREMENT": "#eab308", "MEASURES_PROPERTY": "#facc15", "MEASURED_ON": "#f59e0b",
+        "HAS_VISUAL": "#84cc16", "SUPPORTED_BY_VISUAL": "#84cc16", "CLAIM_ABOUT_SYSTEM": "#fb7185",
+        "CLAIM_ABOUT_PROPERTY": "#2dd4bf", "CLAIM_ABOUT_KEYWORD": "#facc15", "supports": "#22c55e", "contradicts": "#ef4444",
+        "qualifies": "#f59e0b", "extends": "#06b6d4", "same_observation_different_interpretation": "#a855f7",
         "not_directly_comparable": "#9ca3af",
     }
     vis_edges = []
@@ -447,24 +472,27 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
     script_src = "assets/vis-network.min.js" if local_vis_js else "https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"
     type_list = sorted(type_colors)
     relation_list = sorted({edge["relation"] for edge in payload["edges"]})
-    gui_cfg = payload.get("gui", {})
-    expand_limit = max(50, int(gui_cfg.get("expand_limit", 400)))
-    physics_threshold = max(100, int(gui_cfg.get("physics_disable_threshold", 450)))
     html_doc = r'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scientific Knowledge Graph</title><script src="__VIS_JS__"></script><style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;color:#e5e7eb;font-family:Inter,Segoe UI,Arial,sans-serif}#network{position:absolute;inset:0 400px 0 0}#side{position:absolute;right:0;top:0;bottom:0;width:400px;padding:17px;box-sizing:border-box;background:#19191c;border-left:1px solid #333;overflow:auto}h2{margin:0 0 8px;font-size:18px}.muted{color:#9ca3af;font-size:12px}.section{border-top:1px solid #333;margin-top:14px;padding-top:13px}.check{display:flex;align-items:center;gap:7px;margin:5px 0;font-size:12px}.check input{width:auto}button,select,input{width:100%;box-sizing:border-box;background:#26262a;color:#eee;border:1px solid #424248;border-radius:7px;padding:8px;margin:4px 0}.row{display:flex;gap:7px}.row button{width:50%}.badge{display:inline-block;border-radius:12px;padding:3px 7px;margin:2px;background:#2b2b31;font-size:11px}.detail{font-size:12px;line-height:1.5;word-break:break-word}.status{padding:8px;border-radius:7px;background:#222228;margin-top:8px}.accent{color:#c4b5fd}</style></head><body><div id="network"></div><div id="side"><h2>Scientific Knowledge Graph</h2><div class="muted">Progressive view: starts with papers only. Expand one node at a time instead of rendering the entire graph at once.</div><div id="status" class="status muted">Loading…</div><div class="section"><label>Find any node</label><input id="findQuery" placeholder="P0005, water solubility, claim…"><button id="findBtn">Find / focus</button><div class="row"><button id="fit">Fit</button><button id="physics">Physics: on</button></div><button id="collapse">Collapse to papers</button></div><div class="section"><b>Node types</b><div id="types"></div></div><div class="section"><b>Relations</b><div id="relations"></div></div><div class="section"><b>Selected</b><div id="detail" class="muted">Click a node. Use “Expand 1-hop” to reveal its local neighborhood.</div></div></div><script>
-const allNodeArray=__NODES__,allEdgeArray=__EDGES__,meta=__META__,types=__TYPES__,relations=__RELATIONS__,EXPAND_LIMIT=__EXPAND_LIMIT__,PHYSICS_THRESHOLD=__PHYSICS_THRESHOLD__;
-const allNodesById=new Map(allNodeArray.map(n=>[n.id,n]));const allEdgesById=new Map(allEdgeArray.map(e=>[e.id,e]));const adjacency=new Map();for(const e of allEdgeArray){if(!adjacency.has(e.from))adjacency.set(e.from,[]);if(!adjacency.has(e.to))adjacency.set(e.to,[]);adjacency.get(e.from).push(e.id);adjacency.get(e.to).push(e.id);}const initialNodes=allNodeArray.filter(n=>n.type==='paper');let visibleNodeIds=new Set(initialNodes.map(n=>n.id));const nodes=new vis.DataSet(initialNodes),edges=new vis.DataSet();let physics=true;const network=new vis.Network(document.getElementById('network'),{nodes,edges},{interaction:{hover:true,tooltipDelay:180,multiselect:true},physics:{enabled:true,solver:'forceAtlas2Based',forceAtlas2Based:{gravitationalConstant:-72,centralGravity:.006,springLength:120,springConstant:.035,damping:.48,avoidOverlap:.4},stabilization:{iterations:350}},nodes:{scaling:{min:6,max:30}},edges:{smooth:{enabled:true,type:'continuous'}}});
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;color:#e5e7eb;font-family:Inter,Segoe UI,Arial,sans-serif}#network{position:absolute;inset:0 410px 0 0}#side{position:absolute;right:0;top:0;bottom:0;width:410px;padding:17px;box-sizing:border-box;background:#19191c;border-left:1px solid #333;overflow:auto}h2{margin:0 0 8px;font-size:18px}.muted{color:#9ca3af;font-size:12px}.section{border-top:1px solid #333;margin-top:14px;padding-top:13px}.check{display:flex;align-items:center;gap:7px;margin:5px 0;font-size:12px}.check input{width:auto}button,select,input{width:100%;box-sizing:border-box;background:#26262a;color:#eee;border:1px solid #424248;border-radius:7px;padding:8px;margin:4px 0}.row{display:flex;gap:7px}.row button{width:50%}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.badge{display:inline-block;border-radius:12px;padding:3px 7px;margin:2px;background:#2b2b31;font-size:11px}.detail{font-size:12px;line-height:1.5;word-break:break-word}.status{padding:8px;border-radius:7px;background:#222228;margin-top:8px}.accent{color:#c4b5fd}.slider{display:grid;grid-template-columns:1fr 64px;gap:8px;align-items:center}.slider input[type=range]{padding:0}.full{grid-column:1/-1}.tip{font-size:12px;line-height:1.45;margin:6px 0}.historyDisabled{opacity:.45}.primaryText{margin:8px 0;padding:8px;border-radius:7px;background:#222228;font-size:13px;line-height:1.45}</style></head><body><div id="network"></div><div id="side"><h2>Scientific Knowledge Graph</h2><div class="muted"><b>Project:</b> __PROJECT_LABEL__</div><div class="muted">Starts with papers only. Expand local neighborhoods, then use Back to undo each expansion.</div><div id="status" class="status muted">Loading…</div><div class="section"><label>Find any node</label><input id="findQuery" placeholder="P0005, water solubility, claim…"><button id="findBtn">Find / focus</button><div class="row3"><button id="backBtn">← Back</button><button id="forwardBtn">Forward →</button><button id="fit">Fit</button></div><div class="row"><button id="physics">Physics: on</button><button id="collapse">Papers only</button></div></div><div class="section"><b>Appearance</b><div class="slider"><label>Paper label size</label><output id="paperFontOut"></output><input id="paperFont" type="range" min="10" max="30" step="1" class="full"><span></span></div><div class="slider"><label>Paper circle size</label><output id="paperNodeOut"></output><input id="paperNode" type="range" min="12" max="48" step="1"><span></span></div><div class="slider"><label>Other label size</label><output id="otherFontOut"></output><input id="otherFont" type="range" min="8" max="24" step="1"><span></span></div><button id="appearanceReset">Reset appearance</button></div><div class="section"><b>Node types</b><div id="types"></div></div><div class="section"><b>Relations</b><div id="relations"></div></div><div class="section"><b>Selected</b><div id="detail" class="muted">Click a node. Use “Expand 1-hop” to reveal its local neighborhood.</div></div><details class="section"><summary><b>How to read this graph</b></summary><div class="tip">Paper → claim shows what the study asserts. Paper → property/method/system shows what was studied and how. Claim-to-claim edges are model-inferred hypotheses and must be checked against evidence before use in a review.</div></details></div><script>
+const allNodeArray=__NODES__,allEdgeArray=__EDGES__,meta=__META__,types=__TYPES__,relations=__RELATIONS__,EXPAND_LIMIT=__EXPAND_LIMIT__,PHYSICS_THRESHOLD=__PHYSICS_THRESHOLD__,HISTORY_LIMIT=__HISTORY_LIMIT__,DEFAULT_PAPER_FONT=__PAPER_FONT__,DEFAULT_PAPER_NODE=__PAPER_NODE__,DEFAULT_OTHER_FONT=__OTHER_FONT__;
+const allNodesById=new Map(allNodeArray.map(n=>[n.id,n]));const allEdgesById=new Map(allEdgeArray.map(e=>[e.id,e]));const adjacency=new Map();for(const e of allEdgeArray){if(!adjacency.has(e.from))adjacency.set(e.from,[]);if(!adjacency.has(e.to))adjacency.set(e.to,[]);adjacency.get(e.from).push(e.id);adjacency.get(e.to).push(e.id);}const initialNodes=allNodeArray.filter(n=>n.type==='paper');let visibleNodeIds=new Set(initialNodes.map(n=>n.id));let selectedId=null;const nodes=new vis.DataSet(initialNodes),edges=new vis.DataSet();let physics=true;let backStack=[],forwardStack=[];let paperFontSize=Number(localStorage.getItem('kgPaperFont')||DEFAULT_PAPER_FONT),paperNodeSize=Number(localStorage.getItem('kgPaperNode')||DEFAULT_PAPER_NODE),otherFontSize=Number(localStorage.getItem('kgOtherFont')||DEFAULT_OTHER_FONT);const network=new vis.Network(document.getElementById('network'),{nodes,edges},{interaction:{hover:true,tooltipDelay:180,multiselect:true},physics:{enabled:true,solver:'forceAtlas2Based',forceAtlas2Based:{gravitationalConstant:-72,centralGravity:.006,springLength:120,springConstant:.035,damping:.48,avoidOverlap:.4},stabilization:{iterations:350}},nodes:{scaling:{min:6,max:36}},edges:{smooth:{enabled:true,type:'continuous'}}});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));document.getElementById('types').innerHTML=types.map(t=>`<label class="check"><input type="checkbox" data-type="${t}" checked>${t}</label>`).join('');document.getElementById('relations').innerHTML=relations.map(r=>`<label class="check"><input type="checkbox" data-rel="${r}" checked>${r}</label>`).join('');
 function activeTypes(){return new Set([...document.querySelectorAll('[data-type]')].filter(x=>x.checked).map(x=>x.dataset.type));}function activeRelations(){return new Set([...document.querySelectorAll('[data-rel]')].filter(x=>x.checked).map(x=>x.dataset.rel));}function setStatus(message=''){const suffix=`${visibleNodeIds.size}/${allNodeArray.length} nodes · ${edges.length}/${allEdgeArray.length} visible edges`;document.getElementById('status').innerHTML=(message?esc(message)+'<br>':'')+`<span class="accent">${suffix}</span>`;}function setPhysics(on){physics=!!on;network.setOptions({physics:{enabled:physics}});document.getElementById('physics').textContent='Physics: '+(physics?'on':'off');}
+function styledNode(id){const base=allNodesById.get(id);if(!base)return null;const n={...base,font:{...(base.font||{}),size:base.type==='paper'?paperFontSize:otherFontSize},value:base.type==='paper'?Math.max(Number(base.baseValue||base.value||8),paperNodeSize):Number(base.baseValue||base.value||8)};return n;}function refreshAppearance(){nodes.forEach(n=>{const styled=styledNode(n.id);if(styled)nodes.update({id:n.id,font:styled.font,value:styled.value})});document.getElementById('paperFontOut').textContent=paperFontSize;document.getElementById('paperNodeOut').textContent=paperNodeSize;document.getElementById('otherFontOut').textContent=otherFontSize;}
 function refreshNodeVisibility(){const ts=activeTypes();nodes.forEach(n=>nodes.update({id:n.id,hidden:!ts.has(n.type)}));}function rebuildEdges(){const ts=activeTypes(),rs=activeRelations();const batch=[];for(const e of allEdgeArray){if(!visibleNodeIds.has(e.from)||!visibleNodeIds.has(e.to)||!rs.has(e.relation))continue;const a=allNodesById.get(e.from),b=allNodesById.get(e.to);if(!a||!b||!ts.has(a.type)||!ts.has(b.type))continue;batch.push(e);}edges.clear();if(batch.length)edges.add(batch);setStatus();}
-function addVisibleNode(id){if(visibleNodeIds.has(id))return false;const n=allNodesById.get(id);if(!n)return false;visibleNodeIds.add(id);nodes.add(n);return true;}function enableType(type){const box=document.querySelector(`[data-type="${CSS.escape(type)}"]`);if(box)box.checked=true;}function expandNode(id){const source=allNodesById.get(id);if(!source)return;const rs=activeRelations(),ts=activeTypes();let added=0,skipped=0;for(const eid of (adjacency.get(id)||[])){const e=allEdgesById.get(eid);if(!e||!rs.has(e.relation))continue;const other=e.from===id?e.to:e.from;const n=allNodesById.get(other);if(!n||!ts.has(n.type)||visibleNodeIds.has(other))continue;if(added>=EXPAND_LIMIT){skipped++;continue;}if(addVisibleNode(other))added++;}refreshNodeVisibility();rebuildEdges();if(visibleNodeIds.size<=PHYSICS_THRESHOLD&&added){setPhysics(true);network.stabilize(120);network.once('stabilized',()=>setPhysics(false));}else if(visibleNodeIds.size>PHYSICS_THRESHOLD){setPhysics(false);}network.selectNodes([id]);network.focus(id,{scale:Math.min(1.45,Math.max(.75,1.15)),animation:true});setStatus(`Expanded ${added} neighbors${skipped?`; ${skipped} more not added in this click`:''}.`);}
-function collapseToPapers(){const paperNodes=allNodeArray.filter(n=>n.type==='paper');visibleNodeIds=new Set(paperNodes.map(n=>n.id));nodes.clear();nodes.add(paperNodes);refreshNodeVisibility();rebuildEdges();setPhysics(true);network.stabilize(220);network.once('stabilized',()=>setPhysics(false));network.fit({animation:true});setStatus('Collapsed to paper nodes.');}
-function bestMatch(query){const q=query.trim().toLowerCase();if(!q)return null;for(const n of allNodeArray){if(String(n.id).toLowerCase()===q||String(meta[n.id]?.paper_id||'').toLowerCase()===q)return n;}let best=null,bestScore=-1;for(const n of allNodeArray){const m=meta[n.id]||{};const text=`${m.display_label||''} ${m.label||''} ${m.paper_id||''} ${n.id}`.toLowerCase();let score=-1;if(text.startsWith(q))score=4;else if(text.includes(q))score=2;if(n.type==='paper')score+=.25;if(score>bestScore){best=n;bestScore=score;}}return bestScore>=0?best:null;}
-function ensureContext(id){const n=allNodesById.get(id);if(!n)return;enableType(n.type);addVisibleNode(id);if(n.type!=='paper'){for(const eid of (adjacency.get(id)||[])){const e=allEdgesById.get(eid);const other=e.from===id?e.to:e.from;const p=allNodesById.get(other);if(p&&p.type==='paper'){enableType('paper');addVisibleNode(other);break;}}}refreshNodeVisibility();rebuildEdges();}
-function focusQuery(){const input=document.getElementById('findQuery');const found=bestMatch(input.value);if(!found){setStatus(`No node matched “${input.value}”.`);return;}ensureContext(found.id);network.selectNodes([found.id]);network.focus(found.id,{scale:1.55,animation:true});show(found.id);setStatus(`Focused ${meta[found.id]?.display_label||meta[found.id]?.label||found.id}.`);}
-async function openPaper(n){if(!n||n.type!=='paper'||!n.paper_id)return;try{const r=await fetch(`http://127.0.0.1:8766/api/open_pdf?id=${encodeURIComponent(n.paper_id)}`,{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);}catch(e){alert('Could not open the original PDF. Start the Review Literature App first.\n\n'+e);}}
-function show(id){const n=meta[id];if(!n)return;const open=n.type==='paper'?'<button id="openPdfBtn">Open original PDF</button><div class="muted">Double-click this paper node to open immediately.</div>':'';document.getElementById('detail').innerHTML=`<div class="detail"><b>${esc(n.display_label||n.label||n.id)}</b><br><span class="badge">${esc(n.type)}</span><br>${Object.entries(n).filter(([k,v])=>!['id','label','type','display_label','node_size'].includes(k)&&v!==null&&v!==''&&JSON.stringify(v)!=='[]').map(([k,v])=>`<b>${esc(k)}</b>: ${esc(typeof v==='object'?JSON.stringify(v):v)}<br>`).join('')}<button id="expandSelectedBtn">Expand 1-hop</button>${open}</div>`;const x=document.getElementById('expandSelectedBtn');if(x)x.onclick=()=>expandNode(id);const b=document.getElementById('openPdfBtn');if(b)b.onclick=()=>openPaper(n);}
-[...document.querySelectorAll('[data-type],[data-rel]')].forEach(x=>x.onchange=()=>{refreshNodeVisibility();rebuildEdges();});document.getElementById('fit').onclick=()=>network.fit({animation:true});document.getElementById('physics').onclick=()=>setPhysics(!physics);document.getElementById('collapse').onclick=collapseToPapers;document.getElementById('findBtn').onclick=focusQuery;document.getElementById('findQuery').addEventListener('keydown',e=>{if(e.key==='Enter')focusQuery();});network.on('click',p=>{if(p.nodes.length)show(p.nodes[0]);});network.on('doubleClick',p=>{if(!p.nodes.length)return;const n=meta[p.nodes[0]];if(n&&n.type==='paper')openPaper(n);else expandNode(p.nodes[0]);});network.once('stabilizationIterationsDone',()=>{setPhysics(false);setStatus('Paper overview ready. Click a node, then expand its neighborhood.');});refreshNodeVisibility();rebuildEdges();
+function captureState(){return{ids:[...visibleNodeIds],selected:selectedId,position:network.getViewPosition(),scale:network.getScale()}}function updateHistoryButtons(){const b=document.getElementById('backBtn'),f=document.getElementById('forwardBtn');b.disabled=!backStack.length;f.disabled=!forwardStack.length;b.classList.toggle('historyDisabled',!backStack.length);f.classList.toggle('historyDisabled',!forwardStack.length)}function pushHistory(){backStack.push(captureState());if(backStack.length>HISTORY_LIMIT)backStack.shift();forwardStack=[];updateHistoryButtons();}
+function applyState(state,message){visibleNodeIds=new Set(state.ids.filter(id=>allNodesById.has(id)));nodes.clear();const batch=[...visibleNodeIds].map(styledNode).filter(Boolean);if(batch.length)nodes.add(batch);refreshNodeVisibility();rebuildEdges();selectedId=state.selected&&visibleNodeIds.has(state.selected)?state.selected:null;if(selectedId){network.selectNodes([selectedId]);show(selectedId)}else{network.unselectAll();document.getElementById('detail').textContent='Click a node. Use “Expand 1-hop” to reveal its local neighborhood.'}network.moveTo({position:state.position||{x:0,y:0},scale:state.scale||1,animation:false});setPhysics(visibleNodeIds.size<=PHYSICS_THRESHOLD);setStatus(message);updateHistoryButtons();}
+function goBack(){if(!backStack.length)return;forwardStack.push(captureState());applyState(backStack.pop(),'Returned to the previous graph state.')}function goForward(){if(!forwardStack.length)return;backStack.push(captureState());applyState(forwardStack.pop(),'Restored the next graph state.')}
+function addVisibleNode(id){if(visibleNodeIds.has(id))return false;const n=styledNode(id);if(!n)return false;visibleNodeIds.add(id);nodes.add(n);return true;}function enableType(type){const box=document.querySelector(`[data-type="${CSS.escape(type)}"]`);if(box)box.checked=true;}function expandNode(id){const source=allNodesById.get(id);if(!source)return;const rs=activeRelations(),ts=activeTypes();const candidates=[];let skipped=0;for(const eid of(adjacency.get(id)||[])){const e=allEdgesById.get(eid);if(!e||!rs.has(e.relation))continue;const other=e.from===id?e.to:e.from;const n=allNodesById.get(other);if(!n||!ts.has(n.type)||visibleNodeIds.has(other))continue;if(candidates.length>=EXPAND_LIMIT){skipped++;continue;}candidates.push(other)}if(!candidates.length){setStatus('No hidden 1-hop neighbors matched the active filters.');return;}pushHistory();for(const other of candidates)addVisibleNode(other);refreshNodeVisibility();rebuildEdges();if(visibleNodeIds.size<=PHYSICS_THRESHOLD){setPhysics(true);network.stabilize(120);network.once('stabilized',()=>setPhysics(false))}else setPhysics(false);selectedId=id;network.selectNodes([id]);network.focus(id,{scale:1.15,animation:true});setStatus(`Expanded ${candidates.length} neighbors${skipped?`; ${skipped} more not added in this click`:''}.`);}
+function collapseToPapers(){const paperNodes=allNodeArray.filter(n=>n.type==='paper');const target=new Set(paperNodes.map(n=>n.id));if(visibleNodeIds.size===target.size&&[...target].every(x=>visibleNodeIds.has(x)))return;pushHistory();visibleNodeIds=target;nodes.clear();nodes.add(paperNodes.map(n=>styledNode(n.id)));selectedId=null;refreshNodeVisibility();rebuildEdges();setPhysics(true);network.stabilize(220);network.once('stabilized',()=>setPhysics(false));network.fit({animation:true});setStatus('Collapsed to paper nodes.');}
+function bestMatch(query){const q=query.trim().toLowerCase();if(!q)return null;for(const n of allNodeArray){if(String(n.id).toLowerCase()===q||String(meta[n.id]?.paper_id||'').toLowerCase()===q)return n;}let best=null,bestScore=-1;for(const n of allNodeArray){const m=meta[n.id]||{};const text=`${m.display_label||''} ${m.label||''} ${m.paper_id||''} ${n.id}`.toLowerCase();let score=-1;if(text.startsWith(q))score=4;else if(text.includes(q))score=2;if(n.type==='paper')score+=.25;if(score>bestScore){best=n;bestScore=score}}return bestScore>=0?best:null;}
+function ensureContext(id){const n=allNodesById.get(id);if(!n)return false;let changed=!visibleNodeIds.has(id);const additions=[id];if(n.type!=='paper'){for(const eid of(adjacency.get(id)||[])){const e=allEdgesById.get(eid),other=e.from===id?e.to:e.from,p=allNodesById.get(other);if(p&&p.type==='paper'){if(!visibleNodeIds.has(other)){changed=true;additions.push(other)}break}}}if(changed)pushHistory();enableType(n.type);for(const x of additions)addVisibleNode(x);refreshNodeVisibility();rebuildEdges();return changed;}
+function focusQuery(){const input=document.getElementById('findQuery'),found=bestMatch(input.value);if(!found){setStatus(`No node matched “${input.value}”.`);return;}ensureContext(found.id);selectedId=found.id;network.selectNodes([found.id]);network.focus(found.id,{scale:1.55,animation:true});show(found.id);setStatus(`Focused ${meta[found.id]?.display_label||meta[found.id]?.label||found.id}.`);}
+async function openPaper(n){if(!n||n.type!=='paper'||!n.paper_id)return;try{const r=await fetch(`http://127.0.0.1:8766/api/open_pdf?id=${encodeURIComponent(n.paper_id)}`,{method:'POST'}),j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText)}catch(e){alert('Could not open the original PDF. Start Review Literature App first.\n\n'+e)}}async function openCuration(n){const paperId=n?.paper_id;if(!paperId){alert('This node is not linked to a single local paper. Expand a paper or claim node first.');return;}try{const r=await fetch('http://127.0.0.1:8766/api/start_curation',{method:'POST'});if(!r.ok)throw new Error(await r.text());const entity=n.curation_uid?`&entity=${encodeURIComponent(n.curation_uid)}`:'';window.open(`http://127.0.0.1:8765/?paper=${encodeURIComponent(paperId)}${entity}`,'_blank')}catch(e){alert('Could not start the curation editor. Start Review Literature App first.\n\n'+e)}}
+function show(id){const n=meta[id];if(!n)return;selectedId=id;const open=n.type==='paper'?'<button id="openPdfBtn">Open original PDF</button><div class="muted">Double-click this paper node to open immediately.</div>':'';const curate=n.paper_id?'<button id="curateBtn">Edit terms / proofread claims</button>':'';const mainText=(n.type==='paper'||n.type==='claim')&&n.label?`<div class="primaryText">${esc(n.label)}</div>`:'';document.getElementById('detail').innerHTML=`<div class="detail"><b>${esc(n.display_label||n.label||n.id)}</b><br><span class="badge">${esc(n.type)}</span>${mainText}${Object.entries(n).filter(([k,v])=>!['id','label','type','display_label','node_size'].includes(k)&&v!==null&&v!==''&&JSON.stringify(v)!=='[]').map(([k,v])=>`<b>${esc(k)}</b>: ${esc(typeof v==='object'?JSON.stringify(v):v)}<br>`).join('')}<button id="expandSelectedBtn">Expand 1-hop</button>${open}${curate}</div>`;document.getElementById('expandSelectedBtn').onclick=()=>expandNode(id);const b=document.getElementById('openPdfBtn');if(b)b.onclick=()=>openPaper(n);const c=document.getElementById('curateBtn');if(c)c.onclick=()=>openCuration(n);}
+[...document.querySelectorAll('[data-type],[data-rel]')].forEach(x=>x.onchange=()=>{refreshNodeVisibility();rebuildEdges()});document.getElementById('fit').onclick=()=>network.fit({animation:true});document.getElementById('physics').onclick=()=>setPhysics(!physics);document.getElementById('collapse').onclick=collapseToPapers;document.getElementById('backBtn').onclick=goBack;document.getElementById('forwardBtn').onclick=goForward;document.getElementById('findBtn').onclick=focusQuery;document.getElementById('findQuery').addEventListener('keydown',e=>{if(e.key==='Enter')focusQuery()});
+const pf=document.getElementById('paperFont'),pn=document.getElementById('paperNode'),of=document.getElementById('otherFont');pf.value=paperFontSize;pn.value=paperNodeSize;of.value=otherFontSize;pf.oninput=()=>{paperFontSize=Number(pf.value);localStorage.setItem('kgPaperFont',paperFontSize);refreshAppearance()};pn.oninput=()=>{paperNodeSize=Number(pn.value);localStorage.setItem('kgPaperNode',paperNodeSize);refreshAppearance()};of.oninput=()=>{otherFontSize=Number(of.value);localStorage.setItem('kgOtherFont',otherFontSize);refreshAppearance()};document.getElementById('appearanceReset').onclick=()=>{paperFontSize=DEFAULT_PAPER_FONT;paperNodeSize=DEFAULT_PAPER_NODE;otherFontSize=DEFAULT_OTHER_FONT;localStorage.removeItem('kgPaperFont');localStorage.removeItem('kgPaperNode');localStorage.removeItem('kgOtherFont');pf.value=paperFontSize;pn.value=paperNodeSize;of.value=otherFontSize;refreshAppearance()};
+network.on('click',p=>{if(p.nodes.length)show(p.nodes[0])});network.on('doubleClick',p=>{if(!p.nodes.length)return;const n=meta[p.nodes[0]];if(n&&n.type==='paper')openPaper(n);else expandNode(p.nodes[0])});network.on('stabilizationProgress',p=>setStatus(`Stabilizing ${Math.round(100*p.iterations/p.total)}%`));network.once('stabilizationIterationsDone',()=>{setPhysics(false);network.fit({animation:true});setStatus('Paper-only view ready.')});window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?goForward():goBack()}else if(e.altKey&&e.key==='ArrowLeft'){e.preventDefault();goBack()}else if(e.altKey&&e.key==='ArrowRight'){e.preventDefault();goForward()}});refreshAppearance();refreshNodeVisibility();rebuildEdges();updateHistoryButtons();
 </script></body></html>'''
     replacements = {
         "__VIS_JS__": script_src,
@@ -475,7 +503,12 @@ function show(id){const n=meta[id];if(!n)return;const open=n.type==='paper'?'<bu
         "__RELATIONS__": json.dumps(relation_list, ensure_ascii=False),
         "__EXPAND_LIMIT__": str(expand_limit),
         "__PHYSICS_THRESHOLD__": str(physics_threshold),
+        "__HISTORY_LIMIT__": str(history_limit),
+        "__PAPER_FONT__": str(paper_font_size),
+        "__PAPER_NODE__": str(paper_node_size),
+        "__OTHER_FONT__": str(other_font_size),
     }
+    replacements["__PROJECT_LABEL__"] = html.escape(str((payload.get("project") or {}).get("name") or "All papers"))
     for key, value in replacements.items():
         html_doc = html_doc.replace(key, value)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -484,6 +517,7 @@ function show(id){const n=meta[id];if(!n)return;const open=n.type==='paper'?'<bu
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build a scientific knowledge graph from structured paper evidence.")
     ap.add_argument("--config", default=str(ROOT / "config.json"))
+    ap.add_argument("--project", default=None, help="Build only one project. REVIEW_PROJECT is used when omitted.")
     ap.add_argument("--infer-claim-relations", action="store_true", help="Override config and run Qwen claim-relation inference.")
     ap.add_argument("--no-claim-relations", action="store_true", help="Disable Qwen claim-relation inference for this run.")
     args = ap.parse_args()
@@ -496,8 +530,8 @@ def main() -> None:
         cfg["infer_claim_relations"] = True
     if args.no_claim_relations:
         cfg["infer_claim_relations"] = False
-    out_dir = paths.get("knowledge_graph", root / "outputs/knowledge_graph")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    project_arg = args.project or os.environ.get("REVIEW_PROJECT")
+    project_slug = normalize_project_slug(project_arg) if project_arg else None
     metadata_dir = paths.get("metadata", root / "data/metadata")
     reference_dir = paths.get("reference_matches", root / "data/reference_matches")
     visual_dir = paths.get("visual_analysis", root / "data/visual_analysis")
@@ -505,7 +539,18 @@ def main() -> None:
     conn = sqlite3.connect(paths["database"])
     conn.row_factory = sqlite3.Row
     ensure_v4_schema(conn)
-    rows = conn.execute("SELECT * FROM papers WHERE active=1 ORDER BY paper_id").fetchall()
+    ensure_project_schema(conn)
+    if project_slug:
+        rows = project_rows(conn, project_slug, active_only=True)
+        selected_project_name = project_name(conn, project_slug)
+        out_dir = project_knowledge_dir(root, project_slug)
+        cfg["_project_slug"] = project_slug
+    else:
+        rows = conn.execute("SELECT * FROM papers WHERE active=1 ORDER BY paper_id").fetchall()
+        selected_project_name = "All papers"
+        out_dir = paths.get("knowledge_graph", root / "outputs/knowledge_graph")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    selected_paper_ids = {row["paper_id"] for row in rows}
     nodes: dict[str, dict[str, Any]] = {}
     edges: list[dict[str, Any]] = []
     seen_edges: set[tuple[str, str, str]] = set()
@@ -575,6 +620,19 @@ def main() -> None:
             method_terms.append(normalized)
             add_node(nodes, node_id, "method", value, normalized_name=normalized, target_property=item.get("target_property"), node_size=10)
             add_edge(edges, seen_edges, paper_node, node_id, "USES_METHOD")
+
+        keyword_nodes: dict[str, str] = {}
+        keyword_terms: list[str] = []
+        for item in inventory.get("keywords", []):
+            value = item.get("keyword_normalized") or item.get("keyword_raw")
+            if not value:
+                continue
+            normalized = normalize_key(value)
+            node_id = f"keyword:{slug(normalized)}"
+            keyword_nodes[normalized] = node_id
+            keyword_terms.append(normalized)
+            add_node(nodes, node_id, "keyword", value, normalized_name=normalized, node_size=9)
+            add_edge(edges, seen_edges, paper_node, node_id, "HAS_KEYWORD")
 
         system_nodes: dict[str, str] = {}
         system_names: dict[str, str] = {}
@@ -650,6 +708,10 @@ def main() -> None:
                 origin=item.get("claim_origin"),
                 conditions=item.get("conditions_text"),
                 evidence_ids=item.get("evidence_sids", []),
+                curation_uid=item.get("curation_uid"),
+                review_status=item.get("review_status"),
+                review_notes=item.get("review_notes"),
+                curated_tags=item.get("curated_tags", []),
                 node_size=8,
             )
             add_edge(edges, seen_edges, paper_node, uid, "HAS_CLAIM")
@@ -662,6 +724,10 @@ def main() -> None:
                 tokens = [token for token in property_term.split() if len(token) >= 4]
                 if property_term and (property_term in statement_normalized or (tokens and all(token in statement_normalized for token in tokens[:3]))):
                     add_edge(edges, seen_edges, uid, property_node, "CLAIM_ABOUT_PROPERTY")
+            for keyword_term, keyword_node in keyword_nodes.items():
+                tokens = [token for token in keyword_term.split() if len(token) >= 4]
+                if keyword_term and (keyword_term in statement_normalized or (tokens and all(token in statement_normalized for token in tokens[:3]))):
+                    add_edge(edges, seen_edges, uid, keyword_node, "CLAIM_ABOUT_KEYWORD")
             for evidence_id in item.get("evidence_sids", []):
                 if str(evidence_id).startswith("vis:"):
                     visual_uid = f"visual:{paper_id}:{str(evidence_id).replace(':', '_')}"
@@ -675,6 +741,7 @@ def main() -> None:
                         "paper_title": canonical.get("title") or paper_id,
                         "paper_properties": property_terms,
                         "paper_methods": method_terms,
+                        "paper_keywords": keyword_terms,
                         "system_names": [system_names[x] for x in item.get("system_refs", []) if x in system_names],
                         "evidence_excerpts": evidence_excerpts(item.get("evidence_sids", []), source_evidence_map),
                     }
@@ -703,7 +770,7 @@ def main() -> None:
         citation_records = list(references.get("references", [])) + list(references.get("openalex_only_local_edges", []))
         for item in citation_records:
             target = item.get("target_paper_id")
-            if target:
+            if target and target in selected_paper_ids:
                 target_node = f"paper:{target}"
                 add_edge(
                     edges,
@@ -756,13 +823,19 @@ def main() -> None:
             "claim_relation_candidates": len(pairs),
             "claim_relations_inferred": len(inferred),
         },
+        "project": {"slug": project_slug, "name": selected_project_name},
         "provenance": {
             "claim_relation_inference_enabled": bool(cfg.get("infer_claim_relations", False)),
+            "project_slug": project_slug,
         },
         "gui": {
             "initial_mode": "papers",
             "expand_limit": int((cfg.get("gui") or {}).get("expand_limit", 400)),
             "physics_disable_threshold": int((cfg.get("gui") or {}).get("physics_disable_threshold", 450)),
+            "paper_font_size": int((cfg.get("gui") or {}).get("paper_font_size", 18)),
+            "paper_node_size": int((cfg.get("gui") or {}).get("paper_node_size", 24)),
+            "other_font_size": int((cfg.get("gui") or {}).get("other_font_size", 12)),
+            "history_limit": int((cfg.get("gui") or {}).get("history_limit", 60)),
         },
     }
     payload.setdefault("provenance", {})["curation_enabled"] = use_curated
@@ -776,6 +849,7 @@ def main() -> None:
         target_asset.write_bytes(local_js.read_bytes())
         local_arg = target_asset
     make_gui(out_dir / "knowledge.html", payload, local_arg)
+    print(f"Project: {selected_project_name} ({project_slug or 'all'})")
     print(
         f"Knowledge graph: {len(node_list)} nodes, {len(edges)} edges, "
         f"{len(inferred)} inferred claim relations"

@@ -34,7 +34,8 @@ fi
 exec > >(tee -a "$LOG") 2>&1
 
 echo
-echo "========== Review pipeline v4.1.0 $(date '+%F %T') =========="
+echo "========== Review pipeline v4.1.1 $(date '+%F %T') =========="
+echo "Project scope: ${REVIEW_PROJECT:-all papers}"
 cd "$ROOT"
 if [[ ! -f "$VENV/bin/activate" ]]; then
   echo "ERROR: virtualenv not found: $VENV"
@@ -140,4 +141,4 @@ if [[ "${REVIEW_SKIP_NETWORKS:-0}" != "1" ]]; then
   scripts/14_build_knowledge_graph.sh || echo "WARNING: knowledge graph stage skipped/failed."
 fi
 
-echo "========== Completed v4.1.0 $(date '+%F %T') =========="
+echo "========== Completed v4.1.1 $(date '+%F %T') project=${REVIEW_PROJECT:-all} =========="

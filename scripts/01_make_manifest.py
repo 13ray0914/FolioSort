@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+# Re-exec user-facing scripts with the project's virtualenv.
+# This avoids PATH/pyenv selecting a Python build without required stdlib extensions
+# such as _sqlite3. The pipeline wrapper already activates this venv; this guard
+# makes direct ./scripts/*.py invocation equally reliable.
+import os as _bootstrap_os
+import sys as _bootstrap_sys
+from pathlib import Path as _BootstrapPath
+_BOOT_ROOT = _BootstrapPath(__file__).resolve().parents[1]
+_BOOT_VENV = _BOOT_ROOT / ".venv"
+_BOOT_PY = _BOOT_VENV / "bin" / "python"
+if _BOOT_PY.exists() and _BootstrapPath(_bootstrap_sys.prefix).resolve() != _BOOT_VENV.resolve():
+    _bootstrap_os.execv(str(_BOOT_PY), [str(_BOOT_PY), str(_BootstrapPath(__file__).resolve()), *_bootstrap_sys.argv[1:]])
+
 import argparse
 import json
 import sys
@@ -18,6 +31,13 @@ from lib.pipeline_common import (
     now_iso,
     reset_stages,
     sha256_file,
+)
+
+from lib.projects import (
+    assign_paper_to_project,
+    ensure_project,
+    ensure_project_schema,
+    infer_project_slug,
 )
 
 
@@ -81,6 +101,7 @@ def main() -> None:
     raw_dir = paths["raw_pdfs"]
     manifest_path = paths["manifest"]
     conn = connect_db(paths["database"])
+    ensure_project_schema(conn)
 
     pdfs = sorted(p for p in raw_dir.rglob("*.pdf") if p.is_file())
     seen_relpaths: set[str] = set()
@@ -96,6 +117,8 @@ def main() -> None:
         if not pdf.exists():
             continue
         rel = pdf.relative_to(raw_dir).as_posix()
+        project_slug = infer_project_slug(rel)
+        ensure_project(conn, project_slug)
         digest = sha256_file(pdf)
         stat = pdf.stat()
 
@@ -108,6 +131,7 @@ def main() -> None:
                 "UPDATE papers SET last_seen_at=?, active=1, file_size=?, original_filename=? WHERE paper_id=?",
                 (now_iso(), stat.st_size, pdf.name, by_path["paper_id"]),
             )
+            assign_paper_to_project(conn, by_path["paper_id"], project_slug)
             conn.commit()
             unchanged += 1
             continue
@@ -135,6 +159,8 @@ def main() -> None:
                         f"path previously belonged to {by_path['paper_id']}; that paper is now inactive "
                         "because its source PDF was replaced by an exact duplicate"
                     )
+                assign_paper_to_project(conn, by_hash["paper_id"], project_slug)
+                conn.commit()
                 deleted = delete_exact_duplicate(
                     pdf=pdf,
                     rel=rel,
@@ -173,6 +199,7 @@ def main() -> None:
                 """,
                 (rel, pdf.name, stat.st_size, now_iso(), by_hash["paper_id"]),
             )
+            assign_paper_to_project(conn, by_hash["paper_id"], project_slug)
             conn.commit()
             seen_relpaths.add(rel)
             print(f"RENAMED {by_hash['paper_id']}  {by_hash['source_relpath']} -> {rel}")
@@ -191,6 +218,7 @@ def main() -> None:
                 """,
                 (digest, stat.st_size, pdf.name, now_iso(), by_path["paper_id"]),
             )
+            assign_paper_to_project(conn, by_path["paper_id"], project_slug)
             conn.commit()
             reset_stages(conn, by_path["paper_id"])
             print(f"CHANGED {by_path['paper_id']}  {rel} -> downstream stages reset")
@@ -207,9 +235,10 @@ def main() -> None:
             """,
             (paper_id, rel, pdf.name, digest, stat.st_size, now_iso(), now_iso()),
         )
+        assign_paper_to_project(conn, paper_id, project_slug)
         conn.commit()
         seen_relpaths.add(rel)
-        print(f"ADDED   {paper_id}  {rel}")
+        print(f"ADDED   {paper_id}  {rel} [project={project_slug}]")
         added += 1
 
     # Files that disappeared from raw_pdfs remain in the database for provenance but become inactive.

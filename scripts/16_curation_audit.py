@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+# Re-exec user-facing scripts with the project's virtualenv.
+# This avoids PATH/pyenv selecting a Python build without required stdlib extensions
+# such as _sqlite3. The pipeline wrapper already activates this venv; this guard
+# makes direct ./scripts/*.py invocation equally reliable.
+import os as _bootstrap_os
+import sys as _bootstrap_sys
+from pathlib import Path as _BootstrapPath
+_BOOT_ROOT = _BootstrapPath(__file__).resolve().parents[1]
+_BOOT_VENV = _BOOT_ROOT / ".venv"
+_BOOT_PY = _BOOT_VENV / "bin" / "python"
+if _BOOT_PY.exists() and _BootstrapPath(_bootstrap_sys.prefix).resolve() != _BOOT_VENV.resolve():
+    _bootstrap_os.execv(str(_BOOT_PY), [str(_BOOT_PY), str(_BootstrapPath(__file__).resolve()), *_bootstrap_sys.argv[1:]])
+
 import argparse
 import csv
 import itertools
@@ -23,11 +36,21 @@ except Exception:
 
 def extract_terms(path: Path, term_type: str) -> list[tuple[str, str]]:
     payload = read_json(path)
-    rows = payload.get("studied_properties", []) if term_type == "property" else payload.get("methods", [])
+    if term_type == "property":
+        rows = payload.get("studied_properties", [])
+        raw_key, norm_key = "property_raw", "property_normalized"
+    elif term_type == "method":
+        rows = payload.get("methods", [])
+        raw_key, norm_key = "method_raw", "method_normalized"
+    else:
+        rows = payload.get("keywords", [])
+        raw_key, norm_key = "keyword_raw", "keyword_normalized"
     out = []
     for item in rows:
-        raw = item.get("property_raw") if term_type == "property" else item.get("method_raw")
-        norm = item.get("property_normalized") if term_type == "property" else item.get("method_normalized")
+        if not isinstance(item, dict):
+            item = {raw_key: item, norm_key: item}
+        raw = item.get(raw_key)
+        norm = item.get(norm_key)
         if raw or norm:
             out.append((str(raw or norm), str(norm or raw)))
     return out
@@ -45,16 +68,16 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     summary_rows: list[dict[str, Any]] = []
-    all_canonical: dict[str, Counter] = {"property": Counter(), "method": Counter()}
+    all_canonical: dict[str, Counter] = {"property": Counter(), "method": Counter(), "keyword": Counter()}
     raw_forms: dict[str, defaultdict[str, set[str]]] = {
-        "property": defaultdict(set), "method": defaultdict(set)
+        "property": defaultdict(set), "method": defaultdict(set), "keyword": defaultdict(set)
     }
     for raw_path in sorted(paths["extracted"].glob("P*.inventory.json")):
         paper_id = raw_path.name.split(".")[0]
         curated_path = curated_dir / raw_path.name
         if not curated_path.exists():
             continue
-        for term_type in ["property", "method"]:
+        for term_type in ["property", "method", "keyword"]:
             raw_terms = extract_terms(raw_path, term_type)
             curated_terms = extract_terms(curated_path, term_type)
             raw_unique = {surface_key(x[1]) for x in raw_terms if x[1]}
