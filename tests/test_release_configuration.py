@@ -42,15 +42,33 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertNotIn('- "8071:8071"', compose)
 
     def test_graph_generators_use_script_safe_json(self) -> None:
-        for relative in (
-            "scripts/13_build_multiplex_network.py",
-            "scripts/14_build_knowledge_graph.py",
-        ):
-            with self.subTest(relative=relative):
-                source = self.read(relative)
-                self.assertIn("from lib.web_security import html_script_json", source)
-                self.assertIn('"__NODES__": html_script_json(', source)
-                self.assertNotIn('"__NODES__": json.dumps(', source)
+        multiplex = self.read("scripts/13_build_multiplex_network.py")
+        knowledge = self.read("scripts/14_build_knowledge_graph.py")
+
+        for source in (multiplex, knowledge):
+            self.assertIn("from lib.web_security import html_script_json", source)
+        self.assertIn('"__NODES__": html_script_json(', multiplex)
+        self.assertNotIn('"__NODES__": json.dumps(', multiplex)
+        self.assertIn('"__META__": html_script_json(', knowledge)
+        self.assertIn('"__EDGES__": html_script_json(', knowledge)
+        self.assertNotIn('"__META__": json.dumps(', knowledge)
+
+    def test_network_sections_are_independently_expandable(self) -> None:
+        source = self.read("scripts/13_build_multiplex_network.py")
+
+        self.assertIn("foliosort.network.openSections", source)
+        self.assertNotIn("if(other!==details)other.open=false", source)
+
+    def test_knowledge_graph_uses_progressive_local_rendering(self) -> None:
+        source = self.read("assets/knowledge_graph_template.html")
+
+        self.assertIn('id="panelToggle"', source)
+        self.assertIn("function candidateEdgeIndexes()", source)
+        self.assertIn("function prioritizedHiddenNeighbors(id)", source)
+        self.assertIn("hideEdgesOnDrag:true", source)
+        self.assertIn("hideEdgesOnZoom:true", source)
+        self.assertIn("smooth:{enabled:false}", source)
+        self.assertNotIn("for(const edge of compactEdges)", source)
 
 
 if __name__ == "__main__":

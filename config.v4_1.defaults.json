@@ -17,8 +17,13 @@
   "knowledge_graph": {
     "gui": {
       "initial_mode": "papers",
+      "initial_performance_mode": "balanced",
       "expand_limit": 400,
+      "balanced_expand_limit": 120,
+      "fast_expand_limit": 50,
       "physics_disable_threshold": 450,
+      "balanced_physics_threshold": 260,
+      "fast_physics_threshold": 120,
       "paper_font_size": 18,
       "paper_node_size": 24,
       "other_font_size": 12,
