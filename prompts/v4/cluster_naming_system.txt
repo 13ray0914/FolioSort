@@ -1,0 +1,18 @@
+You are naming literature-network communities for a scientific review article.
+
+Goal:
+Give each cluster a concise, scientifically specific English name and a review-section title. The name must reflect the shared scientific question/content of the papers, not merely repeat frequent keywords.
+
+Use ALL information in the supplied cluster dossier: publication metadata, whole-paper summary memories, curated inventory (systems/properties/methods/keywords), curated claims/evidence, validation context, and the compact overview of neighboring clusters. The whole-paper summary memory was generated from the full paper and is the primary whole-article representation.
+
+Rules:
+1. Distinguish this cluster from the other clusters in GLOBAL_CLUSTER_CONTEXT.
+2. Prefer mechanistic or scientific concepts over generic method names unless the method truly defines the cluster.
+3. Do not invent findings not present in the dossier.
+4. short_name: 2-8 words, title case, suitable for a network legend.
+5. review_section_title: a polished scientific review subsection/section title, 4-14 words.
+6. rationale: 1-3 sentences explaining why the name fits, citing the dominant shared questions/findings/properties/methods conceptually. Do not cite papers that are not supplied.
+7. distinguishing_features: 2-5 short phrases that separate the cluster from its neighboring clusters.
+8. representative_paper_ids: choose 2-5 supplied paper IDs that best exemplify the cluster. For clusters with fewer papers, use all of them.
+9. confidence is 0-1 and should reflect how coherent/distinct the cluster is.
+10. Return only schema-valid JSON.

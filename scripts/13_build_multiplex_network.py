@@ -22,6 +22,7 @@ import math
 import os
 import shutil
 import sqlite3
+import subprocess
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -53,7 +54,7 @@ from lib.v4_common import normalize_doi, normalize_openalex_id, normalize_title
 from lib.projects import ensure_project_schema, normalize_project_slug, project_name, project_network_dir, project_rows
 from lib.network_runtime import LAYER_COLORS, compute_layout_positions
 
-SCRIPT_VERSION = "multiplex-network-v4.1.3-selected-layer-recluster-fast-render"
+SCRIPT_VERSION = "multiplex-network-v4.1.4-deterministic-cluster-naming"
 
 
 def first_author_family(authors: list[Any] | None) -> str:
@@ -667,10 +668,16 @@ select,input,button{width:100%;box-sizing:border-box;background:#232326;color:#e
     <div class="rangeRow"><input id="resolution" type="range" min="0.20" max="3.00" step="0.05" value="1.00"><span id="resolutionBox">1.00</span></div>
     <button id="reclusterBtn" class="primary">Recluster using selected layers</button>
     <button id="restoreBtn" class="secondary">Restore saved all-layer clusters</button>
-    <div id="reclusterInfo" class="help">Layer checkboxes change the view immediately. Press Recluster to recompute Leiden communities from the full selected-layer graph.</div>
+    <div id="reclusterInfo" class="help">Layer checkboxes change the view immediately. Press Recluster to recompute Leiden communities from the full selected-layer graph. When local Qwen is available, the resulting clusters are named automatically and cached by scientific-input hash.</div>
   </div>
 
-  <div class="section"><b>Clusters</b><div id="legend"></div></div>
+  <div class="section"><b>AI cluster naming</b>
+    <button id="nameClustersBtn" class="primary">AI name current clusters</button>
+    <button id="forceNameClustersBtn" class="secondary">Force regenerate names</button>
+    <div class="help">Names use every paper's metadata, whole-paper summary memory, curated inventory, and curated claims/evidence—not keywords alone. Identical scientific input reuses an exact cached name. Force regeneration intentionally bypasses that reproducibility cache.</div>
+  </div>
+
+  <div class="section"><b>Clusters</b><div id="legend"></div><div id="clusterNarrative" class="help" style="margin-top:10px"></div></div>
   <div class="section"><b>Selected paper</b><div id="detail" class="muted">Click a node.</div></div>
 </div>
 <script>
@@ -680,6 +687,7 @@ const rawEdges=__RAW_EDGES__;
 const nodeMeta=__NODE_META__;
 const baseNodeMeta=JSON.parse(JSON.stringify(nodeMeta));
 const baseClusters=__CLUSTER_META__;
+const baseClusterNames=__BASE_CLUSTER_NAMES__;
 const baseClusterColors=__CLUSTER_COLORS__;
 const layerWeights=__LAYER_WEIGHTS__;
 const layerColors=__LAYER_COLORS__;
@@ -691,8 +699,12 @@ const palette=['#8b5cf6','#14b8a6','#f59e0b','#ef4444','#3b82f6','#ec4899','#84c
 const layerOrder=['citation','semantic','claim','property','method','keyword','keyword_semantic','bibliographic_coupling'];
 const baseMembership=Object.fromEntries(baseNodeArray.map(n=>[n.id,Number(n.cluster)]));
 const basePositions=Object.fromEntries(baseNodeArray.map(n=>[n.id,{x:Number(n.x||0),y:Number(n.y||0)}]));
+const baseClusteringLayers=layerOrder.filter(name=>rawEdges.some(e=>Number((e.components||{})[name]||0)>0));
 let currentMembership={...baseMembership};
 let currentClusters=JSON.parse(JSON.stringify(baseClusters));
+let currentClusterNames=JSON.parse(JSON.stringify(baseClusterNames||{}));
+let currentClusteringLayers=[...baseClusteringLayers];
+let currentClusteringResolution=Number(guiConfig.recluster_resolution_default||1.0);
 let clusterColors={...baseClusterColors};
 let renderTimer=null;
 
@@ -754,11 +766,25 @@ search.innerHTML='<option value="">— select —</option>'+Object.values(nodeMe
 const cf=document.getElementById('clusterFilter');
 
 function newClusterColors(clusters){const out={};[...clusters].sort((a,b)=>a.cluster_id-b.cluster_id).forEach((c,i)=>out[c.cluster_id]=palette[i%palette.length]);return out;}
-function renderClusterUI(){
-  cf.innerHTML='<option value="all">All clusters</option>'+currentClusters.sort((a,b)=>a.cluster_id-b.cluster_id).map(c=>`<option value="${c.cluster_id}">C${c.cluster_id+1}: ${esc(c.label)} (${c.size})</option>`).join('');
-  document.getElementById('legend').innerHTML=currentClusters.map(c=>`<div class="legend"><span class="dot" style="background:${clusterColors[c.cluster_id]}"></span><span>C${c.cluster_id+1}: ${esc(c.label)} (${c.size})</span></div>`).join('');
+function clusterAI(cid){return currentClusterNames[String(cid)]||currentClusterNames[cid]||null;}
+function clusterDisplayName(c){const ai=clusterAI(c.cluster_id);return ai?.short_name||c.label||`cluster ${Number(c.cluster_id)+1}`;}
+function renderClusterNarrative(){
+  const box=document.getElementById('clusterNarrative');const raw=cf.value;
+  if(raw==='all'){box.innerHTML='<span class="muted">Select a cluster to see the AI naming rationale. Technical frequency labels remain available underneath each AI name.</span>';return;}
+  const cid=Number(raw),c=currentClusters.find(x=>Number(x.cluster_id)===cid),ai=clusterAI(cid);
+  if(!c){box.textContent='';return;}
+  if(!ai){box.innerHTML=`<b>C${cid+1}: ${esc(c.label)}</b><br><span class="muted">No AI name cached for this clustering yet.</span>`;return;}
+  const feats=(ai.distinguishing_features||[]).map(x=>`<li>${esc(x)}</li>`).join('');
+  const reps=(ai.representative_paper_ids||[]).map(x=>`<span class="chip">${esc(x)}</span>`).join('');
+  box.innerHTML=`<div style="font-size:13px;color:#eee"><b>C${cid+1}: ${esc(ai.short_name||c.label)}</b></div><div style="margin-top:5px"><b>Suggested review section</b><br>${esc(ai.review_section_title||'')}</div><div style="margin-top:7px"><b>Why this name?</b><br>${esc(ai.rationale||'')}</div>${feats?`<div style="margin-top:7px"><b>Distinctive features</b><ul style="margin:4px 0 4px 18px;padding:0">${feats}</ul></div>`:''}<div style="margin-top:6px"><b>Technical label</b><br>${esc(ai.technical_label||c.label||'')}</div>${reps?`<div style="margin-top:6px"><b>Representative papers</b><br>${reps}</div>`:''}<div style="margin-top:6px" class="muted">Confidence: ${Number(ai.confidence||0).toFixed(2)} · ${ai.cache_hit?'reused content-addressed cache':'generated/cached'} · deterministic sampling target: temperature 0, fixed seed.</div>`;
 }
-function applyClusterFilter(){const cluster=cf.value;const updates=baseNodeArray.map(n=>({id:n.id,hidden:cluster!=='all'&&String(currentMembership[n.id])!==cluster}));nodes.update(updates);}
+function renderClusterUI(){
+  currentClusters.sort((a,b)=>a.cluster_id-b.cluster_id);
+  cf.innerHTML='<option value="all">All clusters</option>'+currentClusters.map(c=>`<option value="${c.cluster_id}">C${c.cluster_id+1}: ${esc(clusterDisplayName(c))} (${c.size})</option>`).join('');
+  document.getElementById('legend').innerHTML=currentClusters.map(c=>{const ai=clusterAI(c.cluster_id);return `<div class="legend"><span class="dot" style="background:${clusterColors[c.cluster_id]}"></span><span><b>C${c.cluster_id+1}: ${esc(clusterDisplayName(c))}</b> (${c.size})${ai?`<br><span class="muted">technical: ${esc(ai.technical_label||c.label||'')}</span>`:''}</span></div>`}).join('');
+  renderClusterNarrative();
+}
+function applyClusterFilter(){const cluster=cf.value;const updates=baseNodeArray.map(n=>({id:n.id,hidden:cluster!=='all'&&String(currentMembership[n.id])!==cluster}));nodes.update(updates);renderClusterNarrative();}
 
 function updateNodeAppearance(selected){
   const degree=Object.fromEntries(baseNodeArray.map(n=>[n.id,0]));
@@ -782,6 +808,20 @@ function applyLayerView(){
 }
 function scheduleView(){clearTimeout(renderTimer);renderTimer=setTimeout(applyLayerView,90);}
 
+function currentClusterRequest(force=false){return{network_signature:networkSignature,membership:currentMembership,clusters:currentClusters,selected_layers:[...currentClusteringLayers],resolution:Number(currentClusteringResolution),force};}
+async function nameCurrentClusters(force=false){
+  const btn=document.getElementById(force?'forceNameClustersBtn':'nameClustersBtn');const other=document.getElementById(force?'nameClustersBtn':'forceNameClustersBtn');
+  if(force&&!confirm('Force regeneration bypasses the content-addressed name cache. Existing scientific data are unchanged, but wording may differ. Continue?'))return null;
+  btn.disabled=true;other.disabled=true;document.getElementById('reclusterInfo').textContent=force?'Regenerating cluster names with local Qwen…':'Naming clusters with local Qwen or reusing deterministic cache…';
+  try{
+    const response=await fetch(`${API_BASE}/api/network/name_clusters?project=${encodeURIComponent(projectSlug)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(currentClusterRequest(force))});
+    const result=await response.json();if(!response.ok)throw new Error(result.error||response.statusText);
+    currentClusterNames=result.cluster_names||{};renderClusterUI();
+    localStorage.setItem(`foliosort.network.clusterNames.${projectSlug}`,JSON.stringify({network_signature:networkSignature,membership:currentMembership,cluster_names:currentClusterNames}));
+    const hits=Object.values(currentClusterNames).filter(x=>x&&x.cache_hit).length;document.getElementById('reclusterInfo').textContent=`AI names ready for ${Object.keys(currentClusterNames).length} clusters (${hits} cache hit${hits===1?'':'s'}).`;
+    return result;
+  }catch(error){document.getElementById('reclusterInfo').textContent='Cluster naming failed; technical labels remain available.';alert('Could not name clusters. Make sure local Qwen and FolioSort are running.\n\n'+error);return null;}finally{btn.disabled=false;other.disabled=false;}
+}
 async function recluster(){
   const selected=[...activeLayers()];if(!selected.length){alert('Select at least one layer.');return;}
   const resolution=Number(document.getElementById('resolution').value);
@@ -789,24 +829,24 @@ async function recluster(){
   try{
     const response=await fetch(`${API_BASE}/api/network/recluster?project=${encodeURIComponent(projectSlug)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({layers:selected,resolution})});
     const result=await response.json();if(!response.ok)throw new Error(result.error||response.statusText);
-    currentMembership={...result.membership};currentClusters=result.clusters||[];clusterColors=newClusterColors(currentClusters);
+    currentMembership={...result.membership};currentClusters=result.clusters||[];currentClusterNames=result.cluster_names||{};currentClusteringLayers=[...(result.selected_layers||selected)];currentClusteringResolution=Number(result.resolution??resolution);clusterColors=newClusterColors(currentClusters);
     const updates=[];for(const [id,pos] of Object.entries(result.positions||{}))updates.push({id,x:Number(pos.x||0),y:Number(pos.y||0)});if(updates.length)nodes.update(updates);
     renderClusterUI();cf.value='all';applyLayerView();network.fit({animation:{duration:280,easingFunction:'easeInOutQuad'}});
     localStorage.setItem(`foliosort.network.recluster.${projectSlug}`,JSON.stringify(result));
-    info.textContent=`Reclustered into ${currentClusters.length} communities using ${selected.length} layer(s), resolution ${resolution.toFixed(2)}.`;
+    const named=Object.keys(currentClusterNames).length;const warnings=result.cluster_naming_warnings||[];info.textContent=`Reclustered into ${currentClusters.length} communities using ${selected.length} layer(s), resolution ${resolution.toFixed(2)}${named?`; AI names ready for ${named} cluster(s)`:''}${warnings.length?'; naming warning: '+warnings[0]:''}.`;
   }catch(error){info.textContent='Reclustering failed. Make sure FolioSort is running.';alert('Could not recluster the selected layers.\n\n'+error);}finally{btn.disabled=false;}
 }
 function restoreBase(){
-  currentMembership={...baseMembership};currentClusters=JSON.parse(JSON.stringify(baseClusters));clusterColors={...baseClusterColors};
+  currentMembership={...baseMembership};currentClusters=JSON.parse(JSON.stringify(baseClusters));currentClusterNames=JSON.parse(JSON.stringify(baseClusterNames||{}));currentClusteringLayers=[...baseClusteringLayers];currentClusteringResolution=Number(guiConfig.recluster_resolution_default||1.0);clusterColors={...baseClusterColors};
   nodes.update(baseNodeArray.map(n=>({id:n.id,x:basePositions[n.id].x,y:basePositions[n.id].y})));
   for(const id of Object.keys(nodeMeta)){nodeMeta[id].cluster_id=baseNodeMeta[id].cluster_id;nodeMeta[id].cluster_label=baseNodeMeta[id].cluster_label;}
   renderClusterUI();cf.value='all';localStorage.removeItem(`foliosort.network.recluster.${projectSlug}`);applyLayerView();network.fit({animation:{duration:240,easingFunction:'easeInOutQuad'}});document.getElementById('reclusterInfo').textContent='Restored the saved all-layer Leiden partition.';
 }
 function restoreCachedRecluster(){
-  try{const raw=localStorage.getItem(`foliosort.network.recluster.${projectSlug}`);if(!raw)return false;const r=JSON.parse(raw);if(r.network_signature!==networkSignature)return false;currentMembership={...r.membership};currentClusters=r.clusters||[];clusterColors=newClusterColors(currentClusters);const updates=[];for(const [id,pos] of Object.entries(r.positions||{}))updates.push({id,x:Number(pos.x||0),y:Number(pos.y||0)});if(updates.length)nodes.update(updates);renderClusterUI();return true;}catch(_){return false;}
+  try{const raw=localStorage.getItem(`foliosort.network.recluster.${projectSlug}`);if(!raw)return false;const r=JSON.parse(raw);if(r.network_signature!==networkSignature)return false;currentMembership={...r.membership};currentClusters=r.clusters||[];currentClusterNames=r.cluster_names||{};currentClusteringLayers=[...(r.selected_layers||baseClusteringLayers)];currentClusteringResolution=Number(r.resolution??1.0);clusterColors=newClusterColors(currentClusters);const updates=[];for(const [id,pos] of Object.entries(r.positions||{}))updates.push({id,x:Number(pos.x||0),y:Number(pos.y||0)});if(updates.length)nodes.update(updates);renderClusterUI();return true;}catch(_){return false;}
 }
 
-function showDetail(id){const n=nodeMeta[id];if(!n)return;const props=(n.properties||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const methods=(n.methods||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const keywords=(n.keywords||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const claims=(n.claims||[]).slice(0,6).map(x=>`<div class="claim">• ${esc(x)}</div>`).join('');document.getElementById('detail').innerHTML=`<div><b>${esc(n.display_label||n.paper_id)}</b> <span class="muted">(${esc(n.paper_id)})</span></div><div style="font-size:14px;margin:8px 0"><b>${esc(n.title||'(untitled)')}</b></div><div class="muted">${esc(n.journal||'')}<br>${esc(n.doi||'')}<br>${esc(n.original_filename||n.source_relpath||'')}<br>Cluster C${Number(n.cluster_id)+1}: ${esc(n.cluster_label||'')}<br>Validation: ${esc(n.validation_status||'')}</div><button class="openpdf" id="openPdfBtn">Open original PDF</button><button id="openCurBtn" class="secondary">Open in Curation Editor</button><div style="margin-top:10px"><b>Properties</b><br>${props||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Methods</b><br>${methods||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Keywords</b><br>${keywords||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Representative claims</b>${claims||'<div class="muted">none</div>'}</div>`;document.getElementById('openPdfBtn').onclick=()=>openOriginalPdf(id);document.getElementById('openCurBtn').onclick=()=>openCuration(id);}
+function showDetail(id){const n=nodeMeta[id];if(!n)return;const props=(n.properties||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const methods=(n.methods||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const keywords=(n.keywords||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const claims=(n.claims||[]).slice(0,6).map(x=>`<div class="claim">• ${esc(x)}</div>`).join('');document.getElementById('detail').innerHTML=`<div><b>${esc(n.display_label||n.paper_id)}</b> <span class="muted">(${esc(n.paper_id)})</span></div><div style="font-size:14px;margin:8px 0"><b>${esc(n.title||'(untitled)')}</b></div><div class="muted">${esc(n.journal||'')}<br>${esc(n.doi||'')}<br>${esc(n.original_filename||n.source_relpath||'')}<br>Cluster C${Number(n.cluster_id)+1}: ${esc((clusterAI(Number(n.cluster_id))||{}).short_name||n.cluster_label||'')}<br>Validation: ${esc(n.validation_status||'')}</div><button class="openpdf" id="openPdfBtn">Open original PDF</button><button id="openCurBtn" class="secondary">Open in Curation Editor</button><div style="margin-top:10px"><b>Properties</b><br>${props||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Methods</b><br>${methods||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Keywords</b><br>${keywords||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Representative claims</b>${claims||'<div class="muted">none</div>'}</div>`;document.getElementById('openPdfBtn').onclick=()=>openOriginalPdf(id);document.getElementById('openCurBtn').onclick=()=>openCuration(id);}
 async function openOriginalPdf(id){const n=nodeMeta[id];if(!n)return;const status=document.getElementById('status');status.textContent=`Opening ${n.display_label||id}…`;try{const r=await fetch(`${API_BASE}/api/open_pdf?id=${encodeURIComponent(id)}`,{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);status.textContent=`Opened ${n.display_label||id}`;}catch(e){status.textContent='PDF opener is not running. Start FolioSort.';alert('Could not open the original PDF. Start FolioSort first.\n\n'+e);}}
 async function openCuration(id){try{await fetch(`${API_BASE}/api/start_curation`,{method:'POST'});window.open(`http://127.0.0.1:8765/?paper=${encodeURIComponent(id)}`,'_blank');}catch(e){alert('Start FolioSort before opening the curation editor.\n\n'+e);}}
 
@@ -817,12 +857,14 @@ const initialMode=String(guiConfig.initial_performance_mode||'balanced');documen
 const initialResolution=Number(guiConfig.recluster_resolution_default||1.0);document.getElementById('resolution').value=String(initialResolution);document.getElementById('resolutionBox').textContent=initialResolution.toFixed(2);document.getElementById('resolutionValue').textContent=initialResolution.toFixed(2);
 try{const saved=JSON.parse(localStorage.getItem(`foliosort.network.view.${projectSlug}`)||'{}');if(Array.isArray(saved.layers)){document.querySelectorAll('[data-rel]').forEach(x=>x.checked=saved.layers.includes(x.dataset.rel));}if(saved.mode)document.getElementById('performanceMode').value=saved.mode;if(saved.resolution){document.getElementById('resolution').value=String(saved.resolution);document.getElementById('resolutionBox').textContent=Number(saved.resolution).toFixed(2);document.getElementById('resolutionValue').textContent=Number(saved.resolution).toFixed(2);}}catch(_){}
 restoreCachedRecluster();
+try{if(!Object.keys(currentClusterNames).length){const savedNames=JSON.parse(localStorage.getItem(`foliosort.network.clusterNames.${projectSlug}`)||'{}');if(savedNames.network_signature===networkSignature&&JSON.stringify(savedNames.membership||{})===JSON.stringify(currentMembership))currentClusterNames=savedNames.cluster_names||{};}}catch(_){}
+renderClusterUI();
 applyLayerView();setTimeout(()=>network.fit({animation:false}),80);
 
 document.querySelectorAll('[data-rel]').forEach(x=>x.addEventListener('change',scheduleView));
 document.getElementById('performanceMode').addEventListener('change',scheduleView);
 document.getElementById('resolution').addEventListener('input',e=>{const v=Number(e.target.value).toFixed(2);document.getElementById('resolutionBox').textContent=v;document.getElementById('resolutionValue').textContent=v;});
-document.getElementById('reclusterBtn').onclick=recluster;document.getElementById('restoreBtn').onclick=restoreBase;
+document.getElementById('reclusterBtn').onclick=recluster;document.getElementById('restoreBtn').onclick=restoreBase;document.getElementById('nameClustersBtn').onclick=()=>nameCurrentClusters(false);document.getElementById('forceNameClustersBtn').onclick=()=>nameCurrentClusters(true);
 cf.addEventListener('change',()=>{applyClusterFilter();network.fit({animation:{duration:180}});});
 search.addEventListener('change',()=>{if(!search.value)return;nodes.update({id:search.value,hidden:false});network.selectNodes([search.value]);network.focus(search.value,{scale:1.65,animation:true});showDetail(search.value);});
 document.getElementById('fitBtn').onclick=()=>network.fit({animation:{duration:180}});document.getElementById('relaxBtn').onclick=relaxLayout;
@@ -836,6 +878,7 @@ network.on('click',p=>{if(p.nodes.length)showDetail(p.nodes[0]);});network.on('d
         "__RAW_EDGES__": json.dumps(payload["edges"], ensure_ascii=False),
         "__NODE_META__": json.dumps({node["paper_id"]: node for node in payload["nodes"]}, ensure_ascii=False),
         "__CLUSTER_META__": json.dumps(clusters, ensure_ascii=False),
+        "__BASE_CLUSTER_NAMES__": json.dumps(payload.get("cluster_names") or {}, ensure_ascii=False),
         "__CLUSTER_COLORS__": json.dumps({str(key): value for key, value in color_by_cluster.items()}),
         "__LAYER_WEIGHTS__": json.dumps(payload.get("layer_weights") or {}, ensure_ascii=False),
         "__LAYER_COLORS__": json.dumps(LAYER_COLORS, ensure_ascii=False),
@@ -1169,9 +1212,47 @@ def main() -> None:
             "network_signature": network_signature,
             "layout": "precomputed sparse-backbone Fruchterman-Reingold/DrL",
             "rendering": "maximum-spanning-forest + symmetric top-k edge backbone",
+            "layer_weight_policy": str(cfg.get("layer_weight_policy", "heuristic_prior_v1_not_empirically_calibrated")),
         },
     }
     write_json(out_dir / "network.json", payload)
+
+    # Name the saved all-layer clusters while Qwen is already running during the
+    # pipeline. Failure is non-fatal: technical frequency labels remain usable.
+    naming_cfg = cfg.get("cluster_naming", {})
+    if project_slug and bool(naming_cfg.get("enabled", True)) and bool(naming_cfg.get("auto_after_build", True)):
+        naming_python = root / ".venv" / "bin" / "python"
+        naming_script = root / "scripts" / "17_name_clusters.py"
+        if naming_python.exists() and naming_script.exists():
+            naming_request = {
+                "network_signature": network_signature,
+                "membership": membership,
+                "clusters": clusters,
+                "selected_layers": [name for name in layers if layers.get(name)],
+                "resolution": float(clustering_cfg.get("resolution", 1.0)),
+            }
+            try:
+                completed = subprocess.run(
+                    [str(naming_python), str(naming_script), "--project", project_slug],
+                    cwd=str(root),
+                    input=json.dumps(naming_request, ensure_ascii=False),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=1200,
+                    check=False,
+                )
+                if completed.returncode == 0:
+                    naming_result = json.loads(completed.stdout)
+                    payload["cluster_names"] = naming_result.get("cluster_names") or {}
+                    payload["cluster_naming_reproducibility"] = naming_result.get("reproducibility") or {}
+                    write_json(out_dir / "network.json", payload)
+                    print(f"AI-NAME : {len(payload['cluster_names'])} cluster names ready")
+                else:
+                    detail = (completed.stderr or completed.stdout or "cluster naming failed").strip()
+                    print(f"WARNING: cluster naming skipped: {detail[-1200:]}")
+            except Exception as exc:
+                print(f"WARNING: cluster naming skipped: {type(exc).__name__}: {exc}")
 
     with (out_dir / "nodes.csv").open("w", encoding="utf-8-sig", newline="") as file:
         fields = ["paper_id", "display_label", "title", "year", "journal", "doi", "source_relpath", "original_filename", "validation_status", "cluster_id", "cluster_label", "node_size"]

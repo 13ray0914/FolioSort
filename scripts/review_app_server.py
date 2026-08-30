@@ -50,7 +50,7 @@ from lib.projects import (
     rename_project,
 )
 
-APP_VERSION = "4.1.3-selected-layer-recluster-fast"
+APP_VERSION = "4.1.4-deterministic-cluster-naming"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -259,6 +259,34 @@ class FolioSortApp:
         except Exception as exc:
             raise RuntimeError(f"Could not open Windows PDF viewer: {exc}") from exc
 
+    def name_network_clusters(self, project_slug: str, request: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
+        slug = normalize_project_slug(project_slug)
+        network_json = project_network_dir(self.root, slug) / "network.json"
+        if not network_json.exists():
+            raise FileNotFoundError(f"Literature Network has not been generated for project {slug}")
+        python = self.root / ".venv" / "bin" / "python"
+        script = self.root / "scripts" / "17_name_clusters.py"
+        cmd = [str(python), str(script), "--project", slug]
+        if force:
+            cmd.append("--force")
+        completed = subprocess.run(
+            cmd,
+            cwd=str(self.root),
+            input=json.dumps(request, ensure_ascii=False),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=1200,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "cluster naming failed").strip()
+            raise RuntimeError(detail[-6000:])
+        try:
+            return json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Invalid cluster naming response: {completed.stdout[-1500:]}") from exc
+
     def recluster_network(self, project_slug: str, layers: list[str], resolution: float) -> dict[str, Any]:
         slug = normalize_project_slug(project_slug)
         network_json = project_network_dir(self.root, slug) / "network.json"
@@ -289,9 +317,21 @@ class FolioSortApp:
             detail = (completed.stderr or completed.stdout or "reclustering failed").strip()
             raise RuntimeError(detail[-4000:])
         try:
-            return json.loads(completed.stdout)
+            result = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Invalid reclustering response: {completed.stdout[-1000:]}") from exc
+
+        naming_cfg = ((self.config.get("multiplex_graph") or {}).get("cluster_naming") or {})
+        if bool(naming_cfg.get("enabled", True)) and bool(naming_cfg.get("auto_after_recluster", True)):
+            try:
+                naming = self.name_network_clusters(slug, result, force=False)
+                result["cluster_names"] = naming.get("cluster_names") or {}
+                result["cluster_naming_warnings"] = naming.get("warnings") or []
+                result["cluster_naming_reproducibility"] = naming.get("reproducibility") or {}
+            except Exception as exc:
+                # Scientific clustering must remain usable even if Qwen is offline.
+                result["cluster_naming_warnings"] = [f"{type(exc).__name__}: {exc}"]
+        return result
 
     def start_pipeline(self, project_slug: str) -> tuple[bool, str]:
         slug = normalize_project_slug(project_slug)
@@ -458,6 +498,14 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed_origin():
             self.send_json({"error": "cross-origin request denied"}, 403); return
         try:
+            if parsed.path == "/api/network/name_clusters":
+                slug = self.project_from_query(parsed)
+                length = int(self.headers.get("Content-Length") or 0)
+                if length <= 0 or length > 1024 * 1024:
+                    raise ValueError("A JSON cluster-membership request body is required")
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                result = APP.name_network_clusters(slug, body, force=bool(body.get("force", False)))
+                self.send_json(result); return
             if parsed.path == "/api/network/recluster":
                 slug = self.project_from_query(parsed)
                 length = int(self.headers.get("Content-Length") or 0)
