@@ -15,10 +15,13 @@ if _BOOT_PY.exists() and _BootstrapPath(_bootstrap_sys.prefix).resolve() != _BOO
     _bootstrap_os.execv(str(_BOOT_PY), [str(_BOOT_PY), str(_BootstrapPath(__file__).resolve()), *_bootstrap_sys.argv[1:]])
 
 import argparse
+import csv
 import fcntl
+import io
 import json
 import mimetypes
 import os
+import secrets
 import signal
 import sqlite3
 import subprocess
@@ -26,6 +29,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from email import policy
 from email.parser import BytesParser
@@ -52,7 +56,7 @@ from lib.projects import (
     set_project_membership_batch,
 )
 
-APP_VERSION = "4.1.6-master-library-cluster-lists-resizable-ui"
+APP_VERSION = "4.1.7-network-workspace-accordion-cluster-pdf-export"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -104,6 +108,8 @@ class FolioSortApp:
         self.pipeline_pid_file = self.log_dir / "review-app-pipeline.pid"
         self.pipeline_project_file = self.log_dir / "review-app-pipeline.project"
         self.curation_pid_file = self.log_dir / "curation-server.pid"
+        self.download_lock = threading.Lock()
+        self.pending_downloads: dict[str, tuple[Path, str, float]] = {}
         conn = connect_db(self.paths["database"])
         try:
             ensure_project_schema(conn)
@@ -372,6 +378,139 @@ class FolioSortApp:
             raise FileNotFoundError(f"Original PDF is not present: {row['source_relpath']}")
         return path
 
+    @staticmethod
+    def _safe_download_name(value: str, fallback: str = "cluster") -> str:
+        text = str(value or "").strip()
+        text = "".join(ch if ch.isalnum() or ch in "._- " else "_" for ch in text)
+        text = "_".join(text.split()).strip("._-")
+        return (text[:100] or fallback)
+
+    def build_cluster_pdf_zip(
+        self,
+        *,
+        project_slug: str,
+        paper_ids: list[str],
+        cluster_name: str,
+        cluster_label: str = "",
+    ) -> tuple[Path, str]:
+        slug = normalize_project_slug(project_slug)
+        requested = []
+        seen: set[str] = set()
+        for raw in paper_ids:
+            paper_id = str(raw or "").strip()
+            if paper_id and paper_id not in seen:
+                requested.append(paper_id)
+                seen.add(paper_id)
+        if not requested:
+            raise ValueError("Select a cluster containing at least one paper")
+        if len(requested) > 1000:
+            raise ValueError("Cluster PDF export is limited to 1000 papers")
+
+        conn = self.db()
+        try:
+            allowed = set(project_paper_ids(conn, slug, active_only=True))
+        finally:
+            conn.close()
+        unauthorized = [paper_id for paper_id in requested if paper_id not in allowed]
+        if unauthorized:
+            raise ValueError(f"Paper(s) are not members of project {slug}: {', '.join(unauthorized[:8])}")
+
+        library = {item["paper_id"]: item for item in self.master_library(slug)}
+        rows = [library.get(paper_id, {"paper_id": paper_id}) for paper_id in requested]
+        rows.sort(key=lambda item: (
+            int(item.get("year")) if str(item.get("year") or "").isdigit() else 9999,
+            str(item.get("authors") or "").casefold(),
+            str(item.get("title") or "").casefold(),
+            str(item.get("paper_id") or ""),
+        ))
+
+        downloads = self.root / "logs" / "downloads"
+        downloads.mkdir(parents=True, exist_ok=True)
+        base = self._safe_download_name(cluster_name or cluster_label, "cluster")
+        filename = f"{base}_PDFs.zip"
+        zip_path = downloads / f".{base}_{os.getpid()}_{time.time_ns()}.zip"
+
+        text_lines = [
+            f"Project: {self.project_name(slug)} ({slug})",
+            f"Cluster: {cluster_name or cluster_label or 'cluster'}",
+            f"Papers: {len(rows)}",
+            "",
+        ]
+        csv_buffer = io.StringIO(newline="")
+        writer = csv.writer(csv_buffer)
+        writer.writerow(["paper_id", "year", "authors", "title", "journal", "doi", "original_filename"])
+
+        try:
+            with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+                used_names: set[str] = set()
+                for index, row in enumerate(rows, start=1):
+                    paper_id = str(row.get("paper_id") or "")
+                    year = row.get("year") or "?"
+                    authors = str(row.get("authors") or "")
+                    title = str(row.get("title") or "(untitled)")
+                    journal = str(row.get("journal") or "")
+                    doi = str(row.get("doi") or "")
+                    original = str(row.get("original_filename") or "")
+                    text_lines.append(
+                        f"{index}. {year} | {authors or paper_id} | {title} | {journal} | {doi} | {paper_id}"
+                    )
+                    writer.writerow([paper_id, year if year != "?" else "", authors, title, journal, doi, original])
+                    pdf_path = self.resolve_pdf(paper_id)
+                    pdf_name = self._safe_download_name(pdf_path.stem, paper_id) + pdf_path.suffix.lower()
+                    arcname = f"PDFs/{paper_id}_{pdf_name}"
+                    serial = 2
+                    while arcname.casefold() in used_names:
+                        arcname = f"PDFs/{paper_id}_{self._safe_download_name(pdf_path.stem, paper_id)}_{serial}{pdf_path.suffix.lower()}"
+                        serial += 1
+                    used_names.add(arcname.casefold())
+                    archive.write(pdf_path, arcname)
+                archive.writestr("cluster_papers.txt", "\n".join(text_lines) + "\n")
+                archive.writestr("cluster_papers.csv", "\ufeff" + csv_buffer.getvalue())
+        except Exception:
+            zip_path.unlink(missing_ok=True)
+            raise
+        return zip_path, filename
+
+    def _discard_download(self, token: str) -> None:
+        with self.download_lock:
+            item = self.pending_downloads.pop(token, None)
+        if item:
+            path = item[0]
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def register_download(self, path: Path, filename: str, *, ttl_seconds: int = 1800) -> str:
+        now = time.time()
+        with self.download_lock:
+            expired = [token for token, (_, _, expires) in self.pending_downloads.items() if expires <= now]
+        for token in expired:
+            self._discard_download(token)
+        token = secrets.token_urlsafe(24)
+        with self.download_lock:
+            self.pending_downloads[token] = (path, filename, now + ttl_seconds)
+        timer = threading.Timer(ttl_seconds, self._discard_download, args=(token,))
+        timer.daemon = True
+        timer.start()
+        return token
+
+    def take_download(self, token: str) -> tuple[Path, str]:
+        with self.download_lock:
+            item = self.pending_downloads.pop(str(token or ""), None)
+        if not item:
+            raise FileNotFoundError("Download link is invalid or has expired")
+        path, filename, expires = item
+        if expires <= time.time():
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise FileNotFoundError("Download link has expired")
+        if not path.exists():
+            raise FileNotFoundError("Prepared download is no longer available")
+        return path, filename
+
     def open_windows_file(self, path: Path) -> None:
         try:
             win = subprocess.check_output(["wslpath", "-w", str(path)], text=True).strip()
@@ -574,6 +713,39 @@ class Handler(BaseHTTPRequestHandler):
             self.send_html(f"<h2>Not generated yet</h2><p>{path.name} does not exist for this project. Run Analyze first.</p>", 404); return
         data = path.read_bytes(); self.send_response(200); self.send_header("Content-Type", content_type or mimetypes.guess_type(path.name)[0] or "application/octet-stream"); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
 
+    @staticmethod
+    def _safe_header_filename(value: str) -> str:
+        text = "".join(ch if ch.isascii() and (ch.isalnum() or ch in "._-") else "_" for ch in str(value or ""))
+        text = text.strip("._-")
+        return text[:100] or "FolioSort_download"
+
+    def send_download(self, path: Path, filename: str, content_type: str = "application/octet-stream", *, remove_after: bool = False) -> None:
+        try:
+            if not path.exists():
+                raise FileNotFoundError(path)
+            encoded = urllib.parse.quote(filename, safe="")
+            suffix = Path(filename).suffix or ".bin"
+            ascii_stem = self._safe_header_filename(Path(filename).stem)
+            ascii_name = ascii_stem + suffix
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(path.stat().st_size))
+            self.send_header("Content-Disposition", f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded}")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            with path.open("rb") as handle:
+                while True:
+                    chunk = handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        finally:
+            if remove_after:
+                try:
+                    path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
     def project_from_query(self, parsed: urllib.parse.ParseResult) -> str:
         q = urllib.parse.parse_qs(parsed.query)
         return normalize_project_slug((q.get("project") or [DEFAULT_PROJECT_SLUG])[0])
@@ -586,6 +758,15 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/": self.send_html(HTML); return
         if parsed.path == "/health": self.send_json({"ok": True, "version": APP_VERSION}); return
+        if parsed.path == "/api/download":
+            q = urllib.parse.parse_qs(parsed.query)
+            token = (q.get("token") or [""])[0]
+            try:
+                path, filename = APP.take_download(token)
+                self.send_download(path, filename, "application/zip", remove_after=True)
+            except Exception as exc:
+                self.send_html(f"<h2>Download unavailable</h2><p>{type(exc).__name__}: {exc}</p>", 404)
+            return
         if parsed.path == "/api/status":
             slug = self.project_from_query(parsed)
             running_slug = APP.running_project_slug()
@@ -656,6 +837,26 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(length).decode("utf-8"))
                 result = APP.recluster_network(slug, list(body.get("layers") or []), float(body.get("resolution", 1.0)))
                 self.send_json(result); return
+            if parsed.path == "/api/network/cluster_pdfs":
+                slug = self.project_from_query(parsed)
+                length = int(self.headers.get("Content-Length") or 0)
+                if length <= 0 or length > 1024 * 1024:
+                    raise ValueError("A JSON cluster export request is required")
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                paper_ids = [str(x) for x in (body.get("paper_ids") or [])]
+                zip_path, filename = APP.build_cluster_pdf_zip(
+                    project_slug=slug,
+                    paper_ids=paper_ids,
+                    cluster_name=str(body.get("cluster_name") or ""),
+                    cluster_label=str(body.get("technical_label") or ""),
+                )
+                token = APP.register_download(zip_path, filename)
+                self.send_json({
+                    "ok": True,
+                    "filename": filename,
+                    "paper_count": len(paper_ids),
+                    "download_url": f"/api/download?token={urllib.parse.quote(token, safe='')}",
+                }); return
             if parsed.path == "/api/project_membership":
                 slug = self.project_from_query(parsed)
                 length = int(self.headers.get("Content-Length") or 0)
