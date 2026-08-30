@@ -49,7 +49,7 @@ from lib.pipeline_common import (
 from lib.projects import ensure_project_schema, normalize_project_slug, project_knowledge_dir, project_name, project_rows
 from lib.v4_common import ensure_v4_schema, now_iso
 
-SCRIPT_VERSION = "knowledge-graph-v4.1.2-project-scoped-curated-metadata-keywords-history-fonts-progressive-graphml-safe"
+SCRIPT_VERSION = "knowledge-graph-v4.1.3-project-scoped-curated-metadata-keywords-history-fonts-progressive-graphml-safe"
 
 
 def first_author_family(authors: list[Any] | None) -> str:

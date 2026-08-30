@@ -3,7 +3,7 @@ set -Eeuo pipefail
 ROOT="${REVIEW_ROOT:-$HOME/desktop/review}"
 PORT="${REVIEW_CURATION_PORT:-8765}"
 URL="http://127.0.0.1:$PORT/"
-EXPECTED_VERSION="4.1.2-metadata-curation"
+EXPECTED_VERSION="4.1.3-metadata-curation"
 mkdir -p "$ROOT/logs"
 health="$(curl -fsS "http://127.0.0.1:$PORT/health" 2>/dev/null || true)"
 if [[ -z "$health" ]] || ! printf '%s' "$health" | grep -Eq '"version"[[:space:]]*:[[:space:]]*"'"$EXPECTED_VERSION"'"'; then

@@ -3,7 +3,7 @@ set -Eeuo pipefail
 ROOT="${REVIEW_ROOT:-$HOME/desktop/review}"
 PORT="${REVIEW_APP_PORT:-8766}"
 URL="http://127.0.0.1:${PORT}/"
-EXPECTED_VERSION="4.1.2-foliosort-metadata-curation-networkfix"
+EXPECTED_VERSION="4.1.3-selected-layer-recluster-fast"
 mkdir -p "$ROOT/logs"
 
 health="$(curl -fsS "${URL}health" 2>/dev/null || true)"

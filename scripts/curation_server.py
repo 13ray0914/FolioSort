@@ -15,8 +15,13 @@ if _BOOT_PY.exists() and _BootstrapPath(_bootstrap_sys.prefix).resolve() != _BOO
     _bootstrap_os.execv(str(_BOOT_PY), [str(_BOOT_PY), str(_BootstrapPath(__file__).resolve()), *_bootstrap_sys.argv[1:]])
 
 import argparse
+import fcntl
 import json
+import os
+import subprocess
 import sys
+import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -38,20 +43,20 @@ from lib.pipeline_common import connect_db, get_paths, load_config, read_json
 
 HTML = r'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Literature Curation</title>
+<title>FolioSort Curation</title>
 <style>
 :root{font-family:Inter,Segoe UI,Arial,sans-serif;color-scheme:dark;background:#151515;color:#e5e7eb}
 *{box-sizing:border-box}body{margin:0;background:#151515}header{position:sticky;top:0;z-index:4;background:#1c1c1f;border-bottom:1px solid #333;padding:12px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}header b{font-size:18px;margin-right:8px}select,input,textarea,button{background:#242428;color:#eee;border:1px solid #444;border-radius:7px;padding:8px;font:inherit}button{cursor:pointer}button:hover{border-color:#777}.danger{border-color:#7f1d1d}.accent{border-color:#6d5bd0}.layout{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;padding:14px}.panel{background:#1c1c1f;border:1px solid #333;border-radius:10px;padding:14px;margin-bottom:14px}.panel h2{margin:0 0 10px;font-size:16px}.panel h3{font-size:14px;margin:12px 0 7px}.item{border-top:1px solid #333;padding:12px 0}.item:first-of-type{border-top:0}.meta{font-size:12px;color:#9ca3af;white-space:pre-wrap}.grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:7px}.full{grid-column:1/-1}.statement{width:100%;min-height:90px}.original{background:#17171a;border:1px solid #333;border-radius:7px;padding:9px;white-space:pre-wrap;color:#93c5fd;font-size:12px;line-height:1.45;margin:7px 0}.history{font-size:12px;max-height:620px;overflow:auto}.event{border-top:1px solid #333;padding:8px 0;word-break:break-word}.notice{font-size:12px;color:#fbbf24}.ok{color:#86efac;font-size:12px}.small{font-size:12px}.raw{color:#93c5fd}.tabnote{font-size:12px;color:#a7f3d0}.highlight{outline:2px solid #8b5cf6;border-radius:8px;padding:8px}.sticky{position:sticky;top:72px}.field label{font-size:11px;color:#aaa;display:block;margin-top:5px}.field input,.field textarea,.field select{width:100%}.authors{width:100%;min-height:92px}.missing{border-color:#b45309!important}.preview{padding:8px;border-radius:7px;background:#222228;margin-top:7px;font-size:13px}@media(max-width:950px){.layout{grid-template-columns:1fr}header{position:static}.sticky{position:static}}
 </style></head><body>
-<header><b>Literature curation</b><select id="paper"></select><button id="reload">Reload</button><span id="status" class="small"></span></header>
+<header><b>FolioSort curation</b><select id="paper"></select><button id="reload">Reload</button><button id="rebuildNow">Rebuild affected network</button><span id="rebuildState" class="small"></span><span id="status" class="small"></span></header>
 <div class="layout"><main>
-<div class="panel"><h2>Publication metadata</h2><div class="tabnote">Correct title, author names, publication year, journal, or DOI when automatic metadata retrieval is incomplete. The imported metadata remains unchanged; edits are stored as an append-only overlay.</div><div id="metadataOriginal" class="original"></div><div class="grid"><div class="field full"><label>Title</label><input id="metaTitle"></div><div class="field"><label>Publication year</label><input id="metaYear" inputmode="numeric" maxlength="4" placeholder="e.g. 2024"></div><div class="field"><label>Journal</label><input id="metaJournal"></div><div class="field full"><label>DOI</label><input id="metaDoi" placeholder="10.xxxx/..."></div><div class="field full"><label>Authors — one per line; “Family, Given” is recommended</label><textarea id="metaAuthors" class="authors"></textarea></div><input id="metaReason" class="full" placeholder="Reason for metadata correction (recommended)"><button id="metaSave" class="accent">Save metadata correction</button><button id="metaRestore">Restore imported metadata</button></div><div id="metaPreview" class="preview"></div><div class="notice" style="margin-top:7px">After changing metadata, use “Analyze / update selected project” in FolioSort to rebuild the static graph HTML with the corrected label.</div></div>
+<div class="panel"><h2>Publication metadata</h2><div class="tabnote">Correct title, author names, publication year, journal, or DOI when automatic metadata retrieval is incomplete. The imported metadata remains unchanged; edits are stored as an append-only overlay.</div><div id="metadataOriginal" class="original"></div><div class="grid"><div class="field full"><label>Title</label><input id="metaTitle"></div><div class="field"><label>Publication year</label><input id="metaYear" inputmode="numeric" maxlength="4" placeholder="e.g. 2024"></div><div class="field"><label>Journal</label><input id="metaJournal"></div><div class="field full"><label>DOI</label><input id="metaDoi" placeholder="10.xxxx/..."></div><div class="field full"><label>Authors — one per line; “Family, Given” is recommended</label><textarea id="metaAuthors" class="authors"></textarea></div><input id="metaReason" class="full" placeholder="Reason for metadata correction (recommended)"><button id="metaSave" class="accent">Save metadata correction</button><button id="metaRestore">Restore imported metadata</button></div><div id="metaPreview" class="preview"></div><div class="notice" style="margin-top:7px">Saved curation is materialized immediately. FolioSort automatically queues a rebuild of every Literature Network project that contains this paper, so corrected author/year labels and curated terms/claims propagate to the graph without rerunning the heavy PDF/LLM pipeline.</div></div>
 <div class="panel"><h2>Controlled vocabulary / keyword normalization</h2><div class="notice">Raw extraction JSON is never edited. Every change is appended to events.jsonl and SQLite, then materialized into data/curated/.</div>
 <div class="grid"><select id="aliasType"><option value="property">Property</option><option value="method">Method</option><option value="keyword">Keyword / topic tag</option></select><input id="aliasRaw" placeholder="Alias, e.g. aqueous solubility"><input id="aliasCanonical" class="full" placeholder="Canonical term, e.g. water solubility"><input id="aliasReason" class="full" placeholder="Reason (recommended)"><button id="aliasSave" class="full accent">Add global alias</button></div></div>
 <div class="panel"><h2>Properties</h2><div id="properties"></div><div class="add"><h3>Add property</h3><div class="grid"><input id="addPropValue" placeholder="Property"><input id="addPropCanonical" placeholder="Canonical term (optional)"><input id="addPropEvidence" class="full" placeholder="Evidence SIDs, comma separated"><button id="addProp" class="full">Add property</button></div></div></div>
 <div class="panel"><h2>Methods</h2><div id="methods"></div><div class="add"><h3>Add method</h3><div class="grid"><input id="addMethodValue" placeholder="Method"><input id="addMethodCanonical" placeholder="Canonical term (optional)"><input id="addMethodEvidence" class="full" placeholder="Evidence SIDs, comma separated"><button id="addMethod" class="full">Add method</button></div></div></div>
-<div class="panel"><h2>Keywords / topic tags</h2><div class="tabnote">Use these for review-level classification when a concept is broader than a measured property or experimental method.</div><div id="keywords"></div><div class="add"><h3>Add keyword</h3><div class="grid"><input id="addKeywordValue" placeholder="Keyword / topic"><input id="addKeywordCanonical" placeholder="Canonical term (optional)"><input id="addKeywordEvidence" class="full" placeholder="Evidence SIDs, comma separated"><button id="addKeyword" class="full">Add keyword</button></div></div></div>
-<div class="panel"><h2>Claim proofreading</h2><div class="tabnote">Blue text is the immutable LLM extraction. The editable fields below form the curated overlay used by graphs and later drafting.</div><div id="claims"></div><div class="add"><h3>Add claim</h3><textarea id="addClaimStatement" class="statement" placeholder="Claim statement"></textarea><div class="grid"><input id="addClaimType" placeholder="claim_type (optional)"><select id="addClaimStatus"><option value="edited">edited</option><option value="approved">approved</option><option value="needs_revision">needs_revision</option></select><input id="addClaimEvidence" class="full" placeholder="Evidence SIDs, comma separated"><input id="addClaimTags" class="full" placeholder="Curated tags, comma separated"><textarea id="addClaimNotes" class="full" placeholder="Review notes"></textarea><button id="addClaim" class="full">Add claim</button></div></div></div>
+<div class="panel"><h2>Keywords / topic tags</h2><div class="tabnote">Use these for review-level classification when a concept is broader than a measured property or experimental method. Manual canonical aliases remain the strongest equivalence signal; the Literature Network also has a separate automatic semantic-keyword layer that can infer equivalent/related concepts without rewriting these curated terms.</div><div id="keywords"></div><div class="add"><h3>Add keyword</h3><div class="grid"><input id="addKeywordValue" placeholder="Keyword / topic"><input id="addKeywordCanonical" placeholder="Canonical term (optional)"><input id="addKeywordEvidence" class="full" placeholder="Evidence SIDs, comma separated"><button id="addKeyword" class="full">Add keyword</button></div></div></div>
+<div class="panel"><h2>Claim proofreading</h2><div class="tabnote">Blue text is the immutable LLM extraction. The editable fields below form the curated overlay. Literature Network includes a separate curated-claim similarity layer, so approved/edited claim wording can affect paper-paper edges after the automatic rebuild.</div><div id="claims"></div><div class="add"><h3>Add claim</h3><textarea id="addClaimStatement" class="statement" placeholder="Claim statement"></textarea><div class="grid"><input id="addClaimType" placeholder="claim_type (optional)"><select id="addClaimStatus"><option value="edited">edited</option><option value="approved">approved</option><option value="needs_revision">needs_revision</option></select><input id="addClaimEvidence" class="full" placeholder="Evidence SIDs, comma separated"><input id="addClaimTags" class="full" placeholder="Curated tags, comma separated"><textarea id="addClaimNotes" class="full" placeholder="Review notes"></textarea><button id="addClaim" class="full">Add claim</button></div></div></div>
 </main><aside><div class="sticky"><div class="panel"><h2>Change history</h2><div id="history" class="history"></div></div><div class="panel"><h2>Data locations</h2><div class="meta">Raw extraction: data/extracted/\nRaw metadata: data/metadata/\nCurated overlays: data/curated/\nAudit: data/curation/events.jsonl\nSQLite: curation_events_v4</div></div></div></aside></div>
 <script>
 const $=id=>document.getElementById(id);let current=null;const params=new URLSearchParams(location.search);const requestedPaper=params.get('paper')||'';const requestedEntity=params.get('entity')||'';
@@ -59,7 +64,9 @@ function escList(v){return (v||'').split(',').map(x=>x.trim()).filter(Boolean)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 async function api(path,opts={}){const r=await fetch(path,{headers:{'Content-Type':'application/json'},...opts});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j}
 function status(s,ok=true){$('status').textContent=s;$('status').className=ok?'ok':'notice'}
-async function post(path,payload){try{status('Saving…');await api(path,{method:'POST',body:JSON.stringify(payload)});await loadPaper(payload.paper_id||$('paper').value);status('Saved. Raw extraction / imported metadata unchanged.')}catch(e){status(String(e),false)}}
+async function post(path,payload){try{status('Saving…');const j=await api(path,{method:'POST',body:JSON.stringify(payload)});await loadPaper(payload.paper_id||$('paper').value);const projects=(j.rebuild_projects||[]).join(', ');status(projects?`Saved. Network rebuild queued: ${projects}`:'Saved. Raw extraction / imported metadata unchanged.');await refreshRebuildStatus()}catch(e){status(String(e),false)}}
+async function refreshRebuildStatus(){try{const j=await api('/api/rebuild_status');let text='';if(j.running)text=`Rebuilding: ${j.running}`;else if((j.pending||[]).length)text=`Queued: ${j.pending.join(', ')}`;else if(j.last_project)text=`Network ${j.last_ok?'updated':'failed'}: ${j.last_project}`;$('rebuildState').textContent=text;$('rebuildState').className=j.last_ok===false?'notice':'small'}catch(e){}}
+$('rebuildNow').onclick=async()=>{try{const j=await api('/api/rebuild_networks',{method:'POST',body:JSON.stringify({paper_id:$('paper').value})});status(`Network rebuild queued: ${(j.rebuild_projects||[]).join(', ')}`);await refreshRebuildStatus()}catch(e){status(String(e),false)}};setInterval(refreshRebuildStatus,2000);
 async function loadPapers(){const j=await api('/api/papers');$('paper').replaceChildren(...j.papers.map(p=>{const o=document.createElement('option');o.value=p.paper_id;o.textContent=`${p.paper_id} — ${p.year??'?'} — ${p.title||''}`;return o}));if(j.papers.length){if(requestedPaper&&j.papers.some(p=>p.paper_id===requestedPaper))$('paper').value=requestedPaper;await loadPaper($('paper').value)}}
 function authorText(authors){return (authors||[]).map(a=>{if(typeof a==='string')return a;const fam=a.family||a.surname||'';const given=a.given||a.given_name||'';if(fam&&given)return `${fam}, ${given}`;return a.full_name||a.display_name||fam||given||''}).filter(Boolean).join('\n')}
 function firstFamily(authors){const a=(authors||[])[0];if(!a)return '';if(typeof a==='string'){const x=a.trim();return x.includes(',')?x.split(',')[0].trim():(x.split(/\s+/).pop()||'')}return a.family||a.surname||((a.full_name||a.display_name||'').trim().split(/\s+/).pop()||'')}
@@ -82,7 +89,7 @@ $('addProp').onclick=()=>post('/api/term/add',{paper_id:current.paper_id,entity_
 $('addMethod').onclick=()=>post('/api/term/add',{paper_id:current.paper_id,entity_type:'method',value:$('addMethodValue').value,canonical:$('addMethodCanonical').value,evidence_sids:escList($('addMethodEvidence').value)});
 $('addKeyword').onclick=()=>post('/api/term/add',{paper_id:current.paper_id,entity_type:'keyword',value:$('addKeywordValue').value,canonical:$('addKeywordCanonical').value,evidence_sids:escList($('addKeywordEvidence').value)});
 $('addClaim').onclick=()=>post('/api/claim/add',{paper_id:current.paper_id,statement:$('addClaimStatement').value,claim_type:$('addClaimType').value,evidence_sids:escList($('addClaimEvidence').value),tags:escList($('addClaimTags').value),review_status:$('addClaimStatus').value,review_notes:$('addClaimNotes').value});
-loadPapers().catch(e=>status(String(e),false));
+loadPapers().then(refreshRebuildStatus).catch(e=>status(String(e),false));
 </script></body></html>'''
 
 
@@ -129,6 +136,15 @@ class App:
         self.ontology_path = self.root / cfg.get("ontology_path", "profiles/peg/ontology/terms.json")
         self.metadata_dir = self.paths.get("metadata", self.root / "data/metadata")
         self.actor = cfg.get("actor") or None
+        self.auto_rebuild_network = bool(cfg.get("auto_rebuild_literature_network", True))
+        self.rebuild_debounce_seconds = float(cfg.get("network_rebuild_debounce_seconds", 1.5))
+        self._rebuild_lock = threading.Lock()
+        self._rebuild_pending: set[str] = set()
+        self._rebuild_thread: threading.Thread | None = None
+        self._rebuild_running: str | None = None
+        self._rebuild_last_project: str | None = None
+        self._rebuild_last_ok: bool | None = None
+        self._rebuild_last_error: str | None = None
         self.events_path.parent.mkdir(parents=True, exist_ok=True)
         self.events_path.touch(exist_ok=True)
         conn = self.db()
@@ -193,6 +209,106 @@ class App:
         else:
             materialize_all(self.paper_ids(), extracted_dir=self.paths["extracted"], curated_dir=self.curated_dir, ontology_path=self.ontology_path, events_path=self.events_path, metadata_dir=self.metadata_dir)
 
+    def affected_projects(self, paper_id: str | None = None) -> list[str]:
+        conn = self.db()
+        try:
+            if paper_id:
+                rows = conn.execute(
+                    "SELECT DISTINCT project_slug FROM paper_projects WHERE paper_id=? ORDER BY project_slug",
+                    (paper_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT pp.project_slug
+                    FROM paper_projects pp
+                    JOIN papers p ON p.paper_id=pp.paper_id
+                    WHERE p.active=1
+                    ORDER BY pp.project_slug
+                    """
+                ).fetchall()
+            return [str(row[0]) for row in rows]
+        finally:
+            conn.close()
+
+    def pipeline_running(self) -> bool:
+        lock_path = self.root / "logs" / "auto_pipeline.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_path.touch(exist_ok=True)
+        with lock_path.open("a+") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                return False
+
+    def schedule_network_rebuild(self, paper_id: str | None = None, *, force: bool = False) -> list[str]:
+        if not self.auto_rebuild_network and not force:
+            return []
+        projects = self.affected_projects(paper_id)
+        if not projects:
+            return []
+        with self._rebuild_lock:
+            self._rebuild_pending.update(projects)
+            if self._rebuild_thread is None or not self._rebuild_thread.is_alive():
+                self._rebuild_thread = threading.Thread(target=self._network_rebuild_worker, daemon=True)
+                self._rebuild_thread.start()
+        return projects
+
+    def _network_rebuild_worker(self) -> None:
+        time.sleep(max(0.2, self.rebuild_debounce_seconds))
+        log_path = self.root / "logs" / "curation-network-rebuild.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        while True:
+            if self.pipeline_running():
+                time.sleep(2.0)
+                continue
+            with self._rebuild_lock:
+                if not self._rebuild_pending:
+                    self._rebuild_running = None
+                    return
+                slug = sorted(self._rebuild_pending)[0]
+                self._rebuild_pending.discard(slug)
+                self._rebuild_running = slug
+            py = self.root / ".venv_network" / "bin" / "python"
+            script = self.root / "scripts" / "13_build_multiplex_network.py"
+            ok = False
+            error = ""
+            try:
+                with log_path.open("a", encoding="utf-8") as log:
+                    log.write(f"\n=== CURATION NETWORK REBUILD project={slug} ===\n")
+                    result = subprocess.run(
+                        [str(py), str(script), "--project", slug],
+                        cwd=str(self.root),
+                        env={**os.environ, "REVIEW_PROJECT": slug, "REVIEW_ROOT": str(self.root)},
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                        timeout=1800,
+                        check=False,
+                    )
+                    ok = result.returncode == 0
+                    if not ok:
+                        error = f"network builder exited with code {result.returncode}"
+            except Exception as exc:
+                error = str(exc)
+            with self._rebuild_lock:
+                self._rebuild_last_project = slug
+                self._rebuild_last_ok = ok
+                self._rebuild_last_error = error or None
+                self._rebuild_running = None
+
+    def rebuild_status(self) -> dict[str, Any]:
+        with self._rebuild_lock:
+            return {
+                "pending": sorted(self._rebuild_pending),
+                "running": self._rebuild_running,
+                "last_project": self._rebuild_last_project,
+                "last_ok": self._rebuild_last_ok,
+                "last_error": self._rebuild_last_error,
+            }
+
     def current_entity(self, paper_id: str, entity_type: str, uid: str) -> dict[str, Any] | None:
         payload = self.paper_payload(paper_id)
         if entity_type == "property":
@@ -230,7 +346,7 @@ APP: App | None = None
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "LiteratureCuration/4.1.2"
+    server_version = "LiteratureCuration/4.1.3"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         sys.stderr.write("CURATION %s - %s\n" % (self.address_string(), fmt % args))
@@ -260,7 +376,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         if parsed.path == "/health":
-            self.send_json({"ok": True, "version": "4.1.2-metadata-curation"})
+            self.send_json({"ok": True, "version": "4.1.3-metadata-curation"})
             return
         if parsed.path == "/api/papers":
             self.send_json({"papers": APP.paper_summaries()})
@@ -279,6 +395,9 @@ class Handler(BaseHTTPRequestHandler):
                 events = [x for x in events if x.get("paper_id") in (None, paper_id)]
             self.send_json({"events": events})
             return
+        if parsed.path == "/api/rebuild_status":
+            self.send_json(APP.rebuild_status())
+            return
         self.send_json({"error": "not found"}, 404)
 
     def do_POST(self) -> None:
@@ -290,6 +409,13 @@ class Handler(BaseHTTPRequestHandler):
             conn = APP.db()
             common = {"conn": conn, "events_path": APP.events_path, "actor": APP.actor}
             allowed_terms = {"property", "method", "keyword"}
+            if path == "/api/rebuild_networks":
+                paper_id = str(data.get("paper_id") or "") or None
+                if paper_id and paper_id not in APP.paper_ids():
+                    raise ValueError("valid paper_id is required")
+                projects = APP.schedule_network_rebuild(paper_id, force=True)
+                self.send_json({"ok": True, "rebuild_projects": projects})
+                return
             if path in {"/api/metadata/edit", "/api/metadata/restore"}:
                 paper_id = str(data.get("paper_id") or "")
                 if paper_id not in APP.paper_ids():
@@ -312,7 +438,8 @@ class Handler(BaseHTTPRequestHandler):
                     new["authors"] = list(raw_meta.get("authors") or [])
                     event = append_event(**common, event_type="metadata_edit", paper_id=paper_id, entity_type="metadata", entity_uid_value=uid, old=current, new=new, reason=data.get("reason") or "Restored imported metadata", extra={"action": "restore_imported_metadata"})
                 APP.rematerialize(paper_id)
-                self.send_json({"ok": True, "event": event})
+                projects = APP.schedule_network_rebuild(paper_id)
+                self.send_json({"ok": True, "event": event, "rebuild_projects": projects})
                 return
             if path == "/api/term/alias":
                 term_type = data.get("entity_type")
@@ -322,7 +449,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("entity_type, alias and canonical are required")
                 event = append_event(**common, event_type="term_alias", entity_type=term_type, new={"alias": alias, "canonical": canonical}, reason=data.get("reason"))
                 APP.rematerialize()
-                self.send_json({"ok": True, "event": event})
+                projects = APP.schedule_network_rebuild(None)
+                self.send_json({"ok": True, "event": event, "rebuild_projects": projects})
                 return
             if path in {"/api/term/override", "/api/term/delete"}:
                 paper_id = data.get("paper_id")
@@ -339,7 +467,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     event = append_event(**common, event_type="term_delete", paper_id=paper_id, entity_type=term_type, entity_uid_value=uid, old=current, new={"hidden": True}, reason=data.get("reason"))
                 APP.rematerialize(paper_id)
-                self.send_json({"ok": True, "event": event})
+                projects = APP.schedule_network_rebuild(paper_id)
+                self.send_json({"ok": True, "event": event, "rebuild_projects": projects})
                 return
             if path == "/api/term/add":
                 paper_id = data.get("paper_id")
@@ -349,7 +478,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("valid paper_id, entity_type and value are required")
                 event = append_event(**common, event_type="term_add", paper_id=paper_id, entity_type=term_type, new={"value": value, "canonical": data.get("canonical"), "evidence_sids": data.get("evidence_sids") or []}, reason=data.get("reason"))
                 APP.rematerialize(paper_id)
-                self.send_json({"ok": True, "event": event})
+                projects = APP.schedule_network_rebuild(paper_id)
+                self.send_json({"ok": True, "event": event, "rebuild_projects": projects})
                 return
             if path in {"/api/claim/edit", "/api/claim/delete", "/api/claim/restore"}:
                 paper_id = data.get("paper_id")
@@ -381,7 +511,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     event = append_event(**common, event_type="claim_delete", paper_id=paper_id, entity_type="claim", entity_uid_value=uid, old=current, new={"hidden": True}, reason=data.get("reason"))
                 APP.rematerialize(paper_id)
-                self.send_json({"ok": True, "event": event})
+                projects = APP.schedule_network_rebuild(paper_id)
+                self.send_json({"ok": True, "event": event, "rebuild_projects": projects})
                 return
             if path == "/api/claim/add":
                 paper_id = data.get("paper_id")
@@ -392,7 +523,8 @@ class Handler(BaseHTTPRequestHandler):
                 new = {k: data.get(k) for k in fields}
                 event = append_event(**common, event_type="claim_add", paper_id=paper_id, entity_type="claim", new=new, reason=data.get("reason"))
                 APP.rematerialize(paper_id)
-                self.send_json({"ok": True, "event": event})
+                projects = APP.schedule_network_rebuild(paper_id)
+                self.send_json({"ok": True, "event": event, "rebuild_projects": projects})
                 return
             self.send_json({"error": "not found"}, 404)
         except Exception as exc:

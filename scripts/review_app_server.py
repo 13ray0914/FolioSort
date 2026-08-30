@@ -50,7 +50,7 @@ from lib.projects import (
     rename_project,
 )
 
-APP_VERSION = "4.1.2-foliosort-metadata-curation-networkfix"
+APP_VERSION = "4.1.3-selected-layer-recluster-fast"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -259,6 +259,40 @@ class FolioSortApp:
         except Exception as exc:
             raise RuntimeError(f"Could not open Windows PDF viewer: {exc}") from exc
 
+    def recluster_network(self, project_slug: str, layers: list[str], resolution: float) -> dict[str, Any]:
+        slug = normalize_project_slug(project_slug)
+        network_json = project_network_dir(self.root, slug) / "network.json"
+        if not network_json.exists():
+            raise FileNotFoundError(f"Literature Network has not been generated for project {slug}")
+        allowed = {
+            "citation", "semantic", "claim", "property", "method",
+            "keyword", "keyword_semantic", "bibliographic_coupling",
+        }
+        selected = [str(name) for name in layers if str(name) in allowed]
+        if not selected:
+            raise ValueError("Select at least one network layer")
+        resolution = min(3.0, max(0.2, float(resolution)))
+        python = self.root / ".venv_network" / "bin" / "python"
+        script = self.root / "scripts" / "15_recluster_network.py"
+        if not python.exists():
+            raise RuntimeError(".venv_network is missing. Run scripts/install_network_env.sh")
+        completed = subprocess.run(
+            [str(python), str(script), "--project", slug, "--layers", ",".join(selected), "--resolution", str(resolution), "--save"],
+            cwd=str(self.root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "reclustering failed").strip()
+            raise RuntimeError(detail[-4000:])
+        try:
+            return json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Invalid reclustering response: {completed.stdout[-1000:]}") from exc
+
     def start_pipeline(self, project_slug: str) -> tuple[bool, str]:
         slug = normalize_project_slug(project_slug)
         if self.pipeline_running():
@@ -323,7 +357,7 @@ class FolioSortApp:
 
     def start_curation(self) -> str:
         port = int((self.config.get("curation") or {}).get("feedback_port", 8765))
-        expected_version = "4.1.2-metadata-curation"
+        expected_version = "4.1.3-metadata-curation"
         old_server_running = False
         try:
             import urllib.request
@@ -424,6 +458,14 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed_origin():
             self.send_json({"error": "cross-origin request denied"}, 403); return
         try:
+            if parsed.path == "/api/network/recluster":
+                slug = self.project_from_query(parsed)
+                length = int(self.headers.get("Content-Length") or 0)
+                if length <= 0 or length > 65536:
+                    raise ValueError("A small JSON request body is required")
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                result = APP.recluster_network(slug, list(body.get("layers") or []), float(body.get("resolution", 1.0)))
+                self.send_json(result); return
             if parsed.path == "/api/create_project":
                 q = urllib.parse.parse_qs(parsed.query); name = (q.get("name") or [""])[0]
                 slug = APP.create_project(name)
