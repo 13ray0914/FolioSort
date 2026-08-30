@@ -48,8 +48,9 @@ from lib.pipeline_common import (
 )
 from lib.projects import ensure_project_schema, normalize_project_slug, project_knowledge_dir, project_name, project_rows
 from lib.v4_common import ensure_v4_schema, now_iso
+from lib.web_security import html_script_json
 
-SCRIPT_VERSION = "knowledge-graph-v4.1.3-project-scoped-curated-metadata-keywords-history-fonts-progressive-graphml-safe"
+SCRIPT_VERSION = "knowledge-graph-v4.2.0-security-hardened"
 
 
 def first_author_family(authors: list[Any] | None) -> str:
@@ -498,11 +499,11 @@ network.on('click',p=>{if(p.nodes.length)show(p.nodes[0])});network.on('doubleCl
 </script></body></html>'''
     replacements = {
         "__VIS_JS__": script_src,
-        "__NODES__": json.dumps(vis_nodes, ensure_ascii=False),
-        "__EDGES__": json.dumps(vis_edges, ensure_ascii=False),
-        "__META__": json.dumps({node["id"]: node for node in payload["nodes"]}, ensure_ascii=False),
-        "__TYPES__": json.dumps(type_list),
-        "__RELATIONS__": json.dumps(relation_list, ensure_ascii=False),
+        "__NODES__": html_script_json(vis_nodes),
+        "__EDGES__": html_script_json(vis_edges),
+        "__META__": html_script_json({node["id"]: node for node in payload["nodes"]}),
+        "__TYPES__": html_script_json(type_list),
+        "__RELATIONS__": html_script_json(relation_list),
         "__EXPAND_LIMIT__": str(expand_limit),
         "__PHYSICS_THRESHOLD__": str(physics_threshold),
         "__HISTORY_LIMIT__": str(history_limit),

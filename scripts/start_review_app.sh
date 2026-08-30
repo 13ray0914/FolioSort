@@ -3,7 +3,7 @@ set -Eeuo pipefail
 ROOT="${REVIEW_ROOT:-$HOME/desktop/review}"
 PORT="${REVIEW_APP_PORT:-8766}"
 URL="http://127.0.0.1:${PORT}/"
-EXPECTED_VERSION="4.1.7-network-workspace-accordion-cluster-pdf-export"
+EXPECTED_VERSION="4.2.0-security-hardened-network-workspace"
 mkdir -p "$ROOT/logs"
 
 health="$(curl -fsS "${URL}health" 2>/dev/null || true)"

@@ -53,8 +53,9 @@ from lib.pipeline_common import (
 from lib.v4_common import normalize_doi, normalize_openalex_id, normalize_title
 from lib.projects import ensure_project_schema, normalize_project_slug, project_name, project_network_dir, project_rows
 from lib.network_runtime import LAYER_COLORS, compute_layout_positions
+from lib.web_security import html_script_json
 
-SCRIPT_VERSION = "multiplex-network-v4.1.7-accordion-pdf-export-search-resize"
+SCRIPT_VERSION = "multiplex-network-v4.2.0-security-hardened-workspace"
 
 
 def first_author_family(authors: list[Any] | None) -> str:
@@ -953,17 +954,17 @@ network.on('click',p=>{if(p.nodes.length)showDetail(p.nodes[0]);});network.on('d
 </body></html>'''
     replacements = {
         "__VIS_JS__": script_src,
-        "__NODES__": json.dumps(vis_nodes, ensure_ascii=False),
-        "__RAW_EDGES__": json.dumps(payload["edges"], ensure_ascii=False),
-        "__NODE_META__": json.dumps({node["paper_id"]: node for node in payload["nodes"]}, ensure_ascii=False),
-        "__CLUSTER_META__": json.dumps(clusters, ensure_ascii=False),
-        "__BASE_CLUSTER_NAMES__": json.dumps(payload.get("cluster_names") or {}, ensure_ascii=False),
-        "__CLUSTER_COLORS__": json.dumps({str(key): value for key, value in color_by_cluster.items()}),
-        "__LAYER_WEIGHTS__": json.dumps(payload.get("layer_weights") or {}, ensure_ascii=False),
-        "__LAYER_COLORS__": json.dumps(LAYER_COLORS, ensure_ascii=False),
-        "__GUI_CONFIG__": json.dumps(payload.get("gui_config") or {}, ensure_ascii=False),
-        "__PROJECT_SLUG__": json.dumps(str((payload.get("project") or {}).get("slug") or "default")),
-        "__NETWORK_SIGNATURE__": json.dumps(str((payload.get("provenance") or {}).get("network_signature") or "")),
+        "__NODES__": html_script_json(vis_nodes),
+        "__RAW_EDGES__": html_script_json(payload["edges"]),
+        "__NODE_META__": html_script_json({node["paper_id"]: node for node in payload["nodes"]}),
+        "__CLUSTER_META__": html_script_json(clusters),
+        "__BASE_CLUSTER_NAMES__": html_script_json(payload.get("cluster_names") or {}),
+        "__CLUSTER_COLORS__": html_script_json({str(key): value for key, value in color_by_cluster.items()}),
+        "__LAYER_WEIGHTS__": html_script_json(payload.get("layer_weights") or {}),
+        "__LAYER_COLORS__": html_script_json(LAYER_COLORS),
+        "__GUI_CONFIG__": html_script_json(payload.get("gui_config") or {}),
+        "__PROJECT_SLUG__": html_script_json(str((payload.get("project") or {}).get("slug") or "default")),
+        "__NETWORK_SIGNATURE__": html_script_json(str((payload.get("provenance") or {}).get("network_signature") or "")),
         "__PROJECT_LABEL__": html.escape(str((payload.get("project") or {}).get("name") or "All papers")),
     }
     for key, value in replacements.items():

@@ -55,8 +55,9 @@ from lib.projects import (
     rename_project,
     set_project_membership_batch,
 )
+from lib.web_security import browser_request_is_trusted, is_loopback_http_url, read_json_object
 
-APP_VERSION = "4.1.7-network-workspace-accordion-cluster-pdf-export"
+APP_VERSION = "4.2.0-security-hardened-network-workspace"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -657,7 +658,7 @@ class FolioSortApp:
 
     def start_curation(self) -> str:
         port = int((self.config.get("curation") or {}).get("feedback_port", 8765))
-        expected_version = "4.1.3-metadata-curation"
+        expected_version = "4.2.0-security-hardening"
         old_server_running = False
         try:
             import urllib.request
@@ -690,15 +691,26 @@ class Handler(BaseHTTPRequestHandler):
         sys.stderr.write("REVIEWAPP %s - %s\n" % (self.address_string(), fmt % args))
 
     def allowed_origin(self) -> bool:
-        origin = self.headers.get("Origin")
-        return origin in (None, "null", "http://127.0.0.1:8766", "http://localhost:8766")
+        return browser_request_is_trusted(self.headers, self.server.server_port)
 
     def end_headers(self) -> None:
         origin = self.headers.get("Origin")
-        if origin in ("null", "http://127.0.0.1:8766", "http://localhost:8766"):
+        if is_loopback_http_url(origin, self.server.server_port):
             self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
         super().end_headers()
+
+    def read_json_body(self, max_bytes: int, missing_message: str) -> dict[str, Any]:
+        return read_json_object(
+            self.headers,
+            self.rfile,
+            max_bytes=max_bytes,
+            empty_message=missing_message,
+        )
 
     def send_json(self, obj: Any, status: int = 200) -> None:
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -751,6 +763,8 @@ class Handler(BaseHTTPRequestHandler):
         return normalize_project_slug((q.get("project") or [DEFAULT_PROJECT_SLUG])[0])
 
     def do_OPTIONS(self) -> None:
+        if not self.allowed_origin():
+            self.send_json({"error": "cross-origin request denied"}, 403); return
         self.send_response(204); self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS"); self.send_header("Access-Control-Allow-Headers", "Content-Type"); self.end_headers()
 
     def do_GET(self) -> None:
@@ -823,26 +837,17 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/network/name_clusters":
                 slug = self.project_from_query(parsed)
-                length = int(self.headers.get("Content-Length") or 0)
-                if length <= 0 or length > 1024 * 1024:
-                    raise ValueError("A JSON cluster-membership request body is required")
-                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                body = self.read_json_body(1024 * 1024, "A JSON cluster-membership request body is required")
                 result = APP.name_network_clusters(slug, body, force=bool(body.get("force", False)))
                 self.send_json(result); return
             if parsed.path == "/api/network/recluster":
                 slug = self.project_from_query(parsed)
-                length = int(self.headers.get("Content-Length") or 0)
-                if length <= 0 or length > 65536:
-                    raise ValueError("A small JSON request body is required")
-                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                body = self.read_json_body(65536, "A small JSON request body is required")
                 result = APP.recluster_network(slug, list(body.get("layers") or []), float(body.get("resolution", 1.0)))
                 self.send_json(result); return
             if parsed.path == "/api/network/cluster_pdfs":
                 slug = self.project_from_query(parsed)
-                length = int(self.headers.get("Content-Length") or 0)
-                if length <= 0 or length > 1024 * 1024:
-                    raise ValueError("A JSON cluster export request is required")
-                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                body = self.read_json_body(1024 * 1024, "A JSON cluster export request is required")
                 paper_ids = [str(x) for x in (body.get("paper_ids") or [])]
                 zip_path, filename = APP.build_cluster_pdf_zip(
                     project_slug=slug,
@@ -859,10 +864,7 @@ class Handler(BaseHTTPRequestHandler):
                 }); return
             if parsed.path == "/api/project_membership":
                 slug = self.project_from_query(parsed)
-                length = int(self.headers.get("Content-Length") or 0)
-                if length <= 0 or length > 1024 * 1024:
-                    raise ValueError("A JSON membership request body is required")
-                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                body = self.read_json_body(1024 * 1024, "A JSON membership request body is required")
                 paper_ids = [str(x) for x in (body.get("paper_ids") or [])]
                 if not paper_ids:
                     raise ValueError("Select at least one paper")

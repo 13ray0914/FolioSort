@@ -2,7 +2,7 @@ services:
   grobid:
     image: grobid/grobid:0.9.1-full
     ports:
-      - "8070:8070"
-      - "8071:8071"
+      - "127.0.0.1:8070:8070"
+      - "127.0.0.1:8071:8071"
     init: true
     restart: unless-stopped

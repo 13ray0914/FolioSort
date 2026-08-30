@@ -39,6 +39,10 @@ from lib.curation import (
     read_event_log,
 )
 from lib.pipeline_common import connect_db, get_paths, load_config, read_json
+from lib.web_security import browser_request_is_trusted, is_loopback_http_url, read_json_object
+
+
+MAX_JSON_BODY_BYTES = 1024 * 1024
 
 
 HTML = r'''<!doctype html>
@@ -346,10 +350,24 @@ APP: App | None = None
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "LiteratureCuration/4.1.3"
+    server_version = "LiteratureCuration/4.2.0"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         sys.stderr.write("CURATION %s - %s\n" % (self.address_string(), fmt % args))
+
+    def allowed_origin(self) -> bool:
+        return browser_request_is_trusted(self.headers, self.server.server_port)
+
+    def end_headers(self) -> None:
+        origin = self.headers.get("Origin")
+        if is_loopback_http_url(origin, self.server.server_port):
+            self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        super().end_headers()
 
     def send_json(self, payload: Any, status: int = 200) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -360,8 +378,16 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def body(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length") or 0)
-        return json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+        return read_json_object(self.headers, self.rfile, max_bytes=MAX_JSON_BODY_BYTES)
+
+    def do_OPTIONS(self) -> None:
+        if not self.allowed_origin():
+            self.send_json({"error": "cross-origin request denied"}, 403)
+            return
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
 
     def do_GET(self) -> None:
         assert APP is not None
@@ -376,7 +402,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         if parsed.path == "/health":
-            self.send_json({"ok": True, "version": "4.1.3-metadata-curation"})
+            self.send_json({"ok": True, "version": "4.2.0-security-hardening"})
             return
         if parsed.path == "/api/papers":
             self.send_json({"papers": APP.paper_summaries()})
@@ -402,6 +428,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         assert APP is not None
+        if not self.allowed_origin():
+            self.send_json({"error": "cross-origin request denied"}, 403)
+            return
         conn = None
         try:
             data = self.body()

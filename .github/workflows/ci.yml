@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python 3.10 security and smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements_v4.txt
+            requirements_network_v4.txt
+
+      - name: Install test and runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements_v4.txt -r requirements_network_v4.txt
+
+      - name: Run regression tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Compile Python sources
+        run: python -m compileall -q lib scripts run_pipeline.py check_environment.py
+
+      - name: Validate shell scripts
+        run: bash -n scripts/*.sh
+
+      - name: Validate Docker Compose
+        run: docker compose -f docker-compose.grobid.yml config --quiet
+
+      - name: Smoke-load changed entry points
+        run: |
+          python scripts/review_app_server.py --help
+          python scripts/curation_server.py --help
+          python scripts/13_build_multiplex_network.py --help
+          python scripts/14_build_knowledge_graph.py --help
+          python scripts/15_recluster_network.py --help
