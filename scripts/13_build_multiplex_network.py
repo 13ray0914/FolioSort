@@ -54,7 +54,7 @@ from lib.v4_common import normalize_doi, normalize_openalex_id, normalize_title
 from lib.projects import ensure_project_schema, normalize_project_slug, project_name, project_network_dir, project_rows
 from lib.network_runtime import LAYER_COLORS, compute_layout_positions
 
-SCRIPT_VERSION = "multiplex-network-v4.1.5-hierarchical-cluster-naming"
+SCRIPT_VERSION = "multiplex-network-v4.1.6-cluster-lists-resizable-ui"
 
 
 def first_author_family(authors: list[Any] | None) -> str:
@@ -627,15 +627,18 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
 <script src="__VIS_JS__"></script>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;color:#e5e7eb;font-family:Inter,Segoe UI,Arial,sans-serif}
-#network{position:absolute;inset:0 420px 0 0;background:#151515}
-#side{position:absolute;right:0;top:0;bottom:0;width:420px;background:rgba(22,22,24,.985);border-left:1px solid #333;padding:18px;box-sizing:border-box;overflow:auto;box-shadow:-12px 0 28px rgba(0,0,0,.22)}
+:root{--side-width:420px}
+#network{position:absolute;left:0;top:0;bottom:0;right:calc(var(--side-width) + 7px);background:#151515}
+#splitter{position:absolute;top:0;bottom:0;right:var(--side-width);width:7px;cursor:col-resize;background:#242429;border-left:1px solid #34343b;border-right:1px solid #34343b;z-index:15;transition:background .12s}
+#splitter:hover,#splitter.dragging{background:#52525b}
+#side{position:absolute;right:0;top:0;bottom:0;width:var(--side-width);background:rgba(22,22,24,.985);padding:18px;box-sizing:border-box;overflow:auto;box-shadow:-12px 0 28px rgba(0,0,0,.22)}
 h2{font-size:18px;margin:0 0 12px}.muted{color:#9ca3af;font-size:12px;line-height:1.45}.section{border-top:1px solid #333;margin-top:16px;padding-top:14px}
-select,input,button{width:100%;box-sizing:border-box;background:#232326;color:#eee;border:1px solid #3c3c42;border-radius:7px;padding:9px;margin:5px 0}button{cursor:pointer}button:disabled{opacity:.5;cursor:wait}.row{display:flex;gap:7px}.row>*{flex:1}.check{display:flex;align-items:center;gap:7px;font-size:13px;margin:7px 0}.check input{width:auto;margin:0}.swatch{width:10px;height:10px;border-radius:2px;flex:0 0 auto}.badge{display:inline-block;padding:3px 7px;border-radius:12px;background:#2c2c32;margin:2px;font-size:11px}.claim{font-size:12px;line-height:1.45;margin:8px 0;color:#d1d5db}.legend{display:flex;align-items:flex-start;gap:7px;font-size:11px;margin:6px 0}.dot{width:10px;height:10px;border-radius:50%;margin-top:2px;flex:0 0 auto}.openpdf{margin-top:10px;background:#303037;border-color:#5b5b66;font-weight:600}.openpdf:hover{border-color:#a3a3b0}.primary{background:#35354a;border-color:#6666a4;font-weight:650}.secondary{background:#29292e}.compact{font-size:11px;padding:7px}.rangeRow{display:grid;grid-template-columns:1fr 48px;gap:8px;align-items:center}.rangeRow input{margin:0}.help{font-size:11px;color:#a3a3ad;line-height:1.4}.chip{display:inline-block;padding:2px 6px;border-radius:10px;background:#25252a;font-size:10px;color:#b8b8c3;margin:1px}
+select,input,button{width:100%;box-sizing:border-box;background:#232326;color:#eee;border:1px solid #3c3c42;border-radius:7px;padding:9px;margin:5px 0}button{cursor:pointer}button:disabled{opacity:.5;cursor:wait}.row{display:flex;gap:7px}.row>*{flex:1}.check{display:flex;align-items:center;gap:7px;font-size:13px;margin:7px 0}.check input{width:auto;margin:0}.swatch{width:10px;height:10px;border-radius:2px;flex:0 0 auto}.badge{display:inline-block;padding:3px 7px;border-radius:12px;background:#2c2c32;margin:2px;font-size:11px}.claim{font-size:12px;line-height:1.45;margin:8px 0;color:#d1d5db}.legend{display:flex;align-items:flex-start;gap:7px;font-size:11px;margin:6px 0}.dot{width:10px;height:10px;border-radius:50%;margin-top:2px;flex:0 0 auto}.openpdf{margin-top:10px;background:#303037;border-color:#5b5b66;font-weight:600}.openpdf:hover{border-color:#a3a3b0}.primary{background:#35354a;border-color:#6666a4;font-weight:650}.secondary{background:#29292e}.compact{font-size:11px;padding:7px}.rangeRow{display:grid;grid-template-columns:1fr 48px;gap:8px;align-items:center}.rangeRow input{margin:0}.help{font-size:11px;color:#a3a3ad;line-height:1.4}.chip{display:inline-block;padding:2px 6px;border-radius:10px;background:#25252a;font-size:10px;color:#b8b8c3;margin:1px}.paperSearchBox{max-height:180px}.clusterPaperList{border:1px solid #303038;border-radius:7px;background:#19191c;max-height:320px;overflow:auto;margin-top:8px}.clusterPaperRow{padding:7px 9px;border-top:1px solid #292930;font-size:11px;line-height:1.4}.clusterPaperRow:first-child{border-top:0}.clusterPaperTitle{font-weight:600;color:#e4e4e7}.downloadRow{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:7px}.resolutionGuide{margin-top:7px;padding:8px;border-radius:7px;background:#1d1d22;border:1px solid #303038}.resolutionBand{font-size:11px;color:#d4d4d8;margin:2px 0}.legend.clickable{cursor:pointer;padding:3px;border-radius:5px}.legend.clickable:hover{background:#24242a}
 #status{position:absolute;left:12px;bottom:10px;background:rgba(20,20,20,.78);padding:7px 10px;border-radius:7px;font-size:11px;color:#bbb;pointer-events:none;max-width:65vw}
 </style>
 </head>
 <body>
-<div id="network"></div><div id="status">Loading network…</div>
+<div id="network"></div><div id="splitter" title="Drag to resize the network / controls split. Double-click to reset."></div><div id="status">Loading network…</div>
 <div id="side">
   <h2>Multiplex Literature Network</h2>
   <div class="muted"><b>Project:</b> __PROJECT_LABEL__<br>
@@ -643,7 +646,8 @@ select,input,button{width:100%;box-sizing:border-box;background:#232326;color:#e
   </div>
 
   <div class="section">
-    <label>Find paper</label><select id="paperSearch"></select>
+    <label>Find paper</label><input id="paperQuery" type="search" placeholder="Search author, year, title, journal, DOI, P-ID…"><select id="paperSearch" class="paperSearchBox" size="6"></select>
+    <div class="help">Papers are ordered by publication year, oldest first. Unknown years are shown last. Search matches author, year, title, journal, DOI, filename, and P-ID.</div>
     <label>Cluster</label><select id="clusterFilter"></select>
     <div class="row"><button id="fitBtn">Fit</button><button id="relaxBtn">Relax layout</button></div>
     <button id="resetBtn" class="secondary">Reset view and clusters</button>
@@ -666,6 +670,7 @@ select,input,button{width:100%;box-sizing:border-box;background:#232326;color:#e
     <div class="help">Fast/Balanced display only a structure-preserving backbone. Full edges may be slow and visually dense.</div>
     <label>Leiden resolution: <b id="resolutionValue">1.00</b></label>
     <div class="rangeRow"><input id="resolution" type="range" min="0.20" max="3.00" step="0.05" value="1.00"><span id="resolutionBox">1.00</span></div>
+    <div class="resolutionGuide"><div id="resolutionInterpretation" class="resolutionBand"><b>1.00 · balanced starting point</b></div><div class="help">Resolution controls community granularity; it is <b>not</b> a similarity cutoff. Lower values favor fewer, broader clusters; higher values favor more, smaller clusters. Practical starting guide for review organization: <b>0.4–0.7</b> broad chapter themes, <b>0.8–1.2</b> balanced structure, <b>1.3–2.0</b> section/subtopic scale, <b>&gt;2.0</b> exploratory fine splitting. These are heuristics, not universal thresholds; compare several values and check scientific coherence.</div></div>
     <button id="reclusterBtn" class="primary">Recluster using selected layers</button>
     <button id="restoreBtn" class="secondary">Restore saved all-layer clusters</button>
     <div id="reclusterInfo" class="help">Layer checkboxes change the view immediately. Press Recluster to recompute Leiden communities from the full selected-layer graph. When local Qwen is available, the resulting clusters are named automatically and cached by scientific-input hash.</div>
@@ -678,6 +683,7 @@ select,input,button{width:100%;box-sizing:border-box;background:#232326;color:#e
   </div>
 
   <div class="section"><b>Clusters</b><div id="legend"></div><div id="clusterNarrative" class="help" style="margin-top:10px"></div></div>
+  <div class="section"><b>Cluster paper list</b><div class="help">Select a cluster above. The complete paper list is shown as text and can be copied or downloaded without using the network canvas.</div><div class="downloadRow"><button id="copyClusterList" class="compact">Copy text</button><button id="downloadClusterCsv" class="compact">Download CSV</button><button id="downloadClusterJson" class="compact">Download dossier JSON</button></div><div id="clusterPaperList" class="clusterPaperList"><div class="muted" style="padding:9px">Select a cluster.</div></div></div>
   <div class="section"><b>Selected paper</b><div id="detail" class="muted">Click a node.</div></div>
 </div>
 <script>
@@ -762,12 +768,26 @@ const network=new vis.Network(document.getElementById('network'),{nodes,edges},{
 });
 
 const search=document.getElementById('paperSearch');
-search.innerHTML='<option value="">— select —</option>'+Object.values(nodeMeta).sort((a,b)=>(a.title||'').localeCompare(b.title||'')).map(n=>`<option value="${n.paper_id}">${esc(n.display_label||n.paper_id)} · ${esc((n.title||'').slice(0,72))}</option>`).join('');
+const paperQuery=document.getElementById('paperQuery');
+function paperYear(n){const y=parseInt(n.year,10);return Number.isFinite(y)&&y>0?y:9999;}
+function authorText(authors){if(!authors)return'';if(typeof authors==='string')return authors;if(!Array.isArray(authors))return String(authors);return authors.map(a=>{if(typeof a==='string')return a;if(!a||typeof a!=='object')return String(a||'');return a.name||a.display_name||a.raw||[a.given,a.family].filter(Boolean).join(' ');}).filter(Boolean).join('; ');}
+function sortedPapers(){return Object.values(nodeMeta).sort((a,b)=>paperYear(a)-paperYear(b)||(a.display_label||'').localeCompare(b.display_label||'')||(a.title||'').localeCompare(b.title||''));}
+function refreshPaperSearch(){const q=(paperQuery.value||'').trim().toLowerCase();const rows=sortedPapers().filter(n=>{if(!q)return true;const hay=[n.paper_id,n.display_label,n.year,n.title,n.journal,n.doi,n.original_filename,n.source_relpath,authorText(n.authors)].join(' ').toLowerCase();return hay.includes(q);});search.innerHTML=rows.map(n=>`<option value="${n.paper_id}">${esc(n.display_label||n.paper_id)} · ${esc((n.title||'').slice(0,78))}</option>`).join('');if(!rows.length)search.innerHTML='<option value="" disabled>No matches</option>'; }
+refreshPaperSearch();
 const cf=document.getElementById('clusterFilter');
 
 function newClusterColors(clusters){const out={};[...clusters].sort((a,b)=>a.cluster_id-b.cluster_id).forEach((c,i)=>out[c.cluster_id]=palette[i%palette.length]);return out;}
 function clusterAI(cid){return currentClusterNames[String(cid)]||currentClusterNames[cid]||null;}
 function clusterDisplayName(c){const ai=clusterAI(c.cluster_id);return ai?.short_name||c.label||`cluster ${Number(c.cluster_id)+1}`;}
+function clusterPaperRows(cid){return Object.values(nodeMeta).filter(n=>Number(currentMembership[n.paper_id])===Number(cid)).sort((a,b)=>paperYear(a)-paperYear(b)||(a.display_label||'').localeCompare(b.display_label||'')||(a.title||'').localeCompare(b.title||''));}
+function clusterBaseName(cid){const c=currentClusters.find(x=>Number(x.cluster_id)===Number(cid));return `C${Number(cid)+1}_${String((clusterAI(cid)||{}).short_name||c?.label||'cluster').replace(/[^0-9A-Za-z._-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,80)}`;}
+function clusterText(cid){const c=currentClusters.find(x=>Number(x.cluster_id)===Number(cid)),ai=clusterAI(cid),rows=clusterPaperRows(cid);const header=[`C${Number(cid)+1}: ${(ai||{}).short_name||c?.label||''}`,`Technical label: ${(ai||{}).technical_label||c?.label||''}`,`Papers: ${rows.length}`,''];const body=rows.map((n,i)=>`${i+1}. ${n.year||'?'} | ${authorText(n.authors)||n.display_label||n.paper_id} | ${n.title||'(untitled)'} | ${n.journal||''} | ${n.doi||''} | ${n.paper_id}`);return header.concat(body).join('\n');}
+function csvCell(v){const s=String(v??'');return `"${s.replace(/"/g,'""')}"`;}
+function downloadBlob(filename,text,type='text/plain;charset=utf-8'){const blob=new Blob([text],{type});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),800);}
+function renderClusterPaperList(){const box=document.getElementById('clusterPaperList');const raw=cf.value;if(raw==='all'){box.innerHTML='<div class="muted" style="padding:9px">Select a cluster to display its complete text list.</div>';return;}const cid=Number(raw),rows=clusterPaperRows(cid);box.innerHTML=rows.map((n,i)=>`<div class="clusterPaperRow"><div><b>${i+1}. ${esc(n.display_label||n.paper_id)}</b> <span class="muted">${esc(n.paper_id)}</span></div><div class="clusterPaperTitle">${esc(n.title||'(untitled)')}</div><div class="muted">${esc(authorText(n.authors))}${n.journal?` · ${esc(n.journal)}`:''}${n.doi?` · ${esc(n.doi)}`:''}</div></div>`).join('')||'<div class="muted" style="padding:9px">No papers in this cluster.</div>';}
+async function copyClusterList(){if(cf.value==='all'){alert('Select a cluster first.');return;}const text=clusterText(Number(cf.value));try{await navigator.clipboard.writeText(text);document.getElementById('status').textContent='Cluster paper list copied to clipboard.';}catch(_){const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}}
+function downloadClusterCsv(){if(cf.value==='all'){alert('Select a cluster first.');return;}const cid=Number(cf.value),rows=clusterPaperRows(cid);const head=['paper_id','year','authors','title','journal','doi','original_filename','cluster_id','cluster_name'];const c=currentClusters.find(x=>Number(x.cluster_id)===cid),name=(clusterAI(cid)||{}).short_name||c?.label||'';const lines=[head.map(csvCell).join(',')].concat(rows.map(n=>[n.paper_id,n.year||'',authorText(n.authors),n.title||'',n.journal||'',n.doi||'',n.original_filename||'',cid+1,name].map(csvCell).join(',')));downloadBlob(clusterBaseName(cid)+'_papers.csv','\ufeff'+lines.join('\r\n'),'text/csv;charset=utf-8');}
+function downloadClusterJson(){if(cf.value==='all'){alert('Select a cluster first.');return;}const cid=Number(cf.value),c=currentClusters.find(x=>Number(x.cluster_id)===cid),ai=clusterAI(cid),rows=clusterPaperRows(cid);const payload={project:projectSlug,network_signature:networkSignature,cluster_id:cid+1,cluster_name:ai?.short_name||c?.label||'',technical_label:ai?.technical_label||c?.label||'',review_section_title:ai?.review_section_title||'',rationale:ai?.rationale||'',selected_layers:[...currentClusteringLayers],resolution:currentClusteringResolution,papers:rows};downloadBlob(clusterBaseName(cid)+'_dossier.json',JSON.stringify(payload,null,2)+'\n','application/json;charset=utf-8');}
 function renderClusterNarrative(){
   const box=document.getElementById('clusterNarrative');const raw=cf.value;
   if(raw==='all'){box.innerHTML='<span class="muted">Select a cluster to see the AI naming rationale. Technical frequency labels remain available underneath each AI name.</span>';return;}
@@ -780,12 +800,14 @@ function renderClusterNarrative(){
   box.innerHTML=`<div style="font-size:13px;color:#eee"><b>C${cid+1}: ${esc(ai.short_name||c.label)}</b>${fallback?' <span class="chip">AI unavailable</span>':''}</div><div style="margin-top:5px"><b>Suggested review section</b><br>${esc(ai.review_section_title||'')}</div><div style="margin-top:7px"><b>Why this name?</b><br>${esc(ai.rationale||'')}</div>${feats?`<div style="margin-top:7px"><b>Distinctive features</b><ul style="margin:4px 0 4px 18px;padding:0">${feats}</ul></div>`:''}<div style="margin-top:6px"><b>Technical label</b><br>${esc(ai.technical_label||c.label||'')}</div>${reps?`<div style="margin-top:6px"><b>Representative papers</b><br>${reps}</div>`:''}<div style="margin-top:6px" class="muted">Confidence: ${Number(ai.confidence||0).toFixed(2)} · source: ${esc(sourceLabel)} · ${ai.harmonize_cache_hit?'final name reused from content-addressed cache':(ai.candidate_cache_hit?'candidate reused from cache':'generated in this naming pipeline')}.</div>`;
 }
 function renderClusterUI(){
-  currentClusters.sort((a,b)=>a.cluster_id-b.cluster_id);
+  const previous=cf.value||'all';currentClusters.sort((a,b)=>a.cluster_id-b.cluster_id);
   cf.innerHTML='<option value="all">All clusters</option>'+currentClusters.map(c=>`<option value="${c.cluster_id}">C${c.cluster_id+1}: ${esc(clusterDisplayName(c))} (${c.size})</option>`).join('');
-  document.getElementById('legend').innerHTML=currentClusters.map(c=>{const ai=clusterAI(c.cluster_id);return `<div class="legend"><span class="dot" style="background:${clusterColors[c.cluster_id]}"></span><span><b>C${c.cluster_id+1}: ${esc(clusterDisplayName(c))}</b> (${c.size})${ai?`<br><span class="muted">technical: ${esc(ai.technical_label||c.label||'')}</span>`:''}</span></div>`}).join('');
-  renderClusterNarrative();
+  if([...cf.options].some(o=>o.value===previous))cf.value=previous;
+  document.getElementById('legend').innerHTML=currentClusters.map(c=>{const ai=clusterAI(c.cluster_id);return `<div class="legend clickable" data-cluster-id="${c.cluster_id}"><span class="dot" style="background:${clusterColors[c.cluster_id]}"></span><span><b>C${c.cluster_id+1}: ${esc(clusterDisplayName(c))}</b> (${c.size})${ai?`<br><span class="muted">technical: ${esc(ai.technical_label||c.label||'')}</span>`:''}</span></div>`}).join('');
+  document.querySelectorAll('[data-cluster-id]').forEach(el=>el.onclick=()=>{cf.value=el.dataset.clusterId;applyClusterFilter();network.fit({animation:{duration:180}});});
+  renderClusterNarrative();renderClusterPaperList();
 }
-function applyClusterFilter(){const cluster=cf.value;const updates=baseNodeArray.map(n=>({id:n.id,hidden:cluster!=='all'&&String(currentMembership[n.id])!==cluster}));nodes.update(updates);renderClusterNarrative();}
+function applyClusterFilter(){const cluster=cf.value;const updates=baseNodeArray.map(n=>({id:n.id,hidden:cluster!=='all'&&String(currentMembership[n.id])!==cluster}));nodes.update(updates);renderClusterNarrative();renderClusterPaperList();}
 
 function updateNodeAppearance(selected){
   const degree=Object.fromEntries(baseNodeArray.map(n=>[n.id,0]));
@@ -862,12 +884,15 @@ function showDetail(id){const n=nodeMeta[id];if(!n)return;const props=(n.propert
 async function openOriginalPdf(id){const n=nodeMeta[id];if(!n)return;const status=document.getElementById('status');status.textContent=`Opening ${n.display_label||id}…`;try{const r=await fetch(`${API_BASE}/api/open_pdf?id=${encodeURIComponent(id)}`,{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);status.textContent=`Opened ${n.display_label||id}`;}catch(e){status.textContent='PDF opener is not running. Start FolioSort.';alert('Could not open the original PDF. Start FolioSort first.\n\n'+e);}}
 async function openCuration(id){try{await fetch(`${API_BASE}/api/start_curation`,{method:'POST'});window.open(`http://127.0.0.1:8765/?paper=${encodeURIComponent(id)}`,'_blank');}catch(e){alert('Start FolioSort before opening the curation editor.\n\n'+e);}}
 
+function resolutionText(v){v=Number(v);if(v<0.4)return`${v.toFixed(2)} · very broad / exploratory`;if(v<=0.7)return`${v.toFixed(2)} · broad chapter-scale starting range`;if(v<=1.2)return`${v.toFixed(2)} · balanced starting range`;if(v<=2.0)return`${v.toFixed(2)} · finer section/subtopic range`;return`${v.toFixed(2)} · very fine exploratory splitting`;}
+function updateResolutionHelp(v){document.getElementById('resolutionInterpretation').innerHTML=`<b>${esc(resolutionText(v))}</b>`;}
+function setupSplitter(){const splitter=document.getElementById('splitter');const root=document.documentElement;let width=Number(localStorage.getItem(`foliosort.network.sidebarWidth.${projectSlug}`)||420);const clampWidth=w=>Math.max(300,Math.min(window.innerWidth*0.7,Math.min(900,w)));const apply=w=>{width=clampWidth(w);root.style.setProperty('--side-width',`${width}px`);localStorage.setItem(`foliosort.network.sidebarWidth.${projectSlug}`,String(Math.round(width)));network.redraw();};apply(width);splitter.addEventListener('pointerdown',e=>{splitter.setPointerCapture(e.pointerId);splitter.classList.add('dragging');const move=ev=>apply(window.innerWidth-ev.clientX);const up=()=>{splitter.classList.remove('dragging');splitter.removeEventListener('pointermove',move);splitter.removeEventListener('pointerup',up);splitter.removeEventListener('pointercancel',up);};splitter.addEventListener('pointermove',move);splitter.addEventListener('pointerup',up);splitter.addEventListener('pointercancel',up);});splitter.ondblclick=()=>apply(420);window.addEventListener('resize',()=>apply(width));}
 function relaxLayout(){const btn=document.getElementById('relaxBtn');btn.disabled=true;btn.textContent='Relaxing…';network.setOptions({physics:{enabled:true,solver:'barnesHut',barnesHut:{gravitationalConstant:-4200,centralGravity:.18,springLength:115,springConstant:.035,damping:.35,avoidOverlap:.25},stabilization:{enabled:true,iterations:120,fit:false}}});network.stabilize(120);network.once('stabilized',()=>{network.setOptions({physics:{enabled:false}});btn.disabled=false;btn.textContent='Relax layout';});}
 
 renderClusterUI();
 const initialMode=String(guiConfig.initial_performance_mode||'balanced');document.getElementById('performanceMode').value=['fast','balanced','full'].includes(initialMode)?initialMode:'balanced';
-const initialResolution=Number(guiConfig.recluster_resolution_default||1.0);document.getElementById('resolution').value=String(initialResolution);document.getElementById('resolutionBox').textContent=initialResolution.toFixed(2);document.getElementById('resolutionValue').textContent=initialResolution.toFixed(2);
-try{const saved=JSON.parse(localStorage.getItem(`foliosort.network.view.${projectSlug}`)||'{}');if(Array.isArray(saved.layers)){document.querySelectorAll('[data-rel]').forEach(x=>x.checked=saved.layers.includes(x.dataset.rel));}if(saved.mode)document.getElementById('performanceMode').value=saved.mode;if(saved.resolution){document.getElementById('resolution').value=String(saved.resolution);document.getElementById('resolutionBox').textContent=Number(saved.resolution).toFixed(2);document.getElementById('resolutionValue').textContent=Number(saved.resolution).toFixed(2);}}catch(_){}
+const initialResolution=Number(guiConfig.recluster_resolution_default||1.0);document.getElementById('resolution').value=String(initialResolution);document.getElementById('resolutionBox').textContent=initialResolution.toFixed(2);document.getElementById('resolutionValue').textContent=initialResolution.toFixed(2);updateResolutionHelp(initialResolution);
+try{const saved=JSON.parse(localStorage.getItem(`foliosort.network.view.${projectSlug}`)||'{}');if(Array.isArray(saved.layers)){document.querySelectorAll('[data-rel]').forEach(x=>x.checked=saved.layers.includes(x.dataset.rel));}if(saved.mode)document.getElementById('performanceMode').value=saved.mode;if(saved.resolution){document.getElementById('resolution').value=String(saved.resolution);document.getElementById('resolutionBox').textContent=Number(saved.resolution).toFixed(2);document.getElementById('resolutionValue').textContent=Number(saved.resolution).toFixed(2);updateResolutionHelp(Number(saved.resolution));}}catch(_){}
 restoreCachedRecluster();
 try{if(!Object.keys(currentClusterNames).length){const savedNames=JSON.parse(localStorage.getItem(`foliosort.network.clusterNames.${projectSlug}`)||'{}');if(savedNames.network_signature===networkSignature&&JSON.stringify(savedNames.membership||{})===JSON.stringify(currentMembership))currentClusterNames=savedNames.cluster_names||{};}}catch(_){}
 renderClusterUI();
@@ -875,12 +900,13 @@ applyLayerView();setTimeout(()=>network.fit({animation:false}),80);
 
 document.querySelectorAll('[data-rel]').forEach(x=>x.addEventListener('change',scheduleView));
 document.getElementById('performanceMode').addEventListener('change',scheduleView);
-document.getElementById('resolution').addEventListener('input',e=>{const v=Number(e.target.value).toFixed(2);document.getElementById('resolutionBox').textContent=v;document.getElementById('resolutionValue').textContent=v;});
+document.getElementById('resolution').addEventListener('input',e=>{const value=Number(e.target.value);const v=value.toFixed(2);document.getElementById('resolutionBox').textContent=v;document.getElementById('resolutionValue').textContent=v;updateResolutionHelp(value);});
 document.getElementById('reclusterBtn').onclick=recluster;document.getElementById('restoreBtn').onclick=restoreBase;document.getElementById('nameClustersBtn').onclick=()=>nameCurrentClusters(false);document.getElementById('forceNameClustersBtn').onclick=()=>nameCurrentClusters(true);
 cf.addEventListener('change',()=>{applyClusterFilter();network.fit({animation:{duration:180}});});
-search.addEventListener('change',()=>{if(!search.value)return;nodes.update({id:search.value,hidden:false});network.selectNodes([search.value]);network.focus(search.value,{scale:1.65,animation:true});showDetail(search.value);});
+document.getElementById('copyClusterList').onclick=copyClusterList;document.getElementById('downloadClusterCsv').onclick=downloadClusterCsv;document.getElementById('downloadClusterJson').onclick=downloadClusterJson;setupSplitter();
+paperQuery.addEventListener('input',refreshPaperSearch);search.addEventListener('change',()=>{if(!search.value)return;nodes.update({id:search.value,hidden:false});network.selectNodes([search.value]);network.focus(search.value,{scale:1.65,animation:true});showDetail(search.value);});
 document.getElementById('fitBtn').onclick=()=>network.fit({animation:{duration:180}});document.getElementById('relaxBtn').onclick=relaxLayout;
-document.getElementById('resetBtn').onclick=()=>{document.querySelectorAll('[data-rel]').forEach(x=>x.checked=true);document.getElementById('performanceMode').value='balanced';document.getElementById('resolution').value='1.00';document.getElementById('resolutionBox').textContent='1.00';document.getElementById('resolutionValue').textContent='1.00';restoreBase();};
+document.getElementById('resetBtn').onclick=()=>{document.querySelectorAll('[data-rel]').forEach(x=>x.checked=true);document.getElementById('performanceMode').value='balanced';document.getElementById('resolution').value='1.00';document.getElementById('resolutionBox').textContent='1.00';document.getElementById('resolutionValue').textContent='1.00';updateResolutionHelp(1.0);restoreBase();};
 network.on('click',p=>{if(p.nodes.length)showDetail(p.nodes[0]);});network.on('doubleClick',p=>{if(p.nodes.length)openOriginalPdf(p.nodes[0]);});
 </script>
 </body></html>'''

@@ -69,27 +69,49 @@ def ensure_project_schema(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_paper_projects_project ON paper_projects(project_slug, paper_id)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project_schema_meta(
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """
+    )
     ts = now_iso()
     conn.execute(
         "INSERT OR IGNORE INTO projects(project_slug,name,created_at,updated_at) VALUES (?,?,?,?)",
         (DEFAULT_PROJECT_SLUG, DEFAULT_PROJECT_NAME, ts, ts),
     )
-    # Backward-compatible migration: every paper that predates project support gets
-    # a membership inferred from its current source path. Existing memberships are
-    # never removed because one paper may intentionally belong to multiple projects.
-    try:
-        rows = conn.execute("SELECT paper_id,source_relpath FROM papers").fetchall()
-    except sqlite3.OperationalError:
-        rows = []
-    for row in rows:
-        paper_id = row["paper_id"] if isinstance(row, sqlite3.Row) else row[0]
-        source_relpath = row["source_relpath"] if isinstance(row, sqlite3.Row) else row[1]
-        has_any = conn.execute("SELECT 1 FROM paper_projects WHERE paper_id=? LIMIT 1", (paper_id,)).fetchone()
-        if has_any:
-            continue
-        slug = infer_project_slug(source_relpath)
-        ensure_project(conn, slug, DEFAULT_PROJECT_NAME if slug == DEFAULT_PROJECT_SLUG else slug.replace("-", " ").title())
-        assign_paper_to_project(conn, paper_id, slug)
+
+    # One-time backward-compatible migration. Earlier versions ran this inference on
+    # every database connection, which made it impossible to intentionally remove a
+    # paper from all projects. v4.1.6 records completion, so the canonical Master PDF
+    # Library can remain independent of project membership.
+    migrated = conn.execute(
+        "SELECT value FROM project_schema_meta WHERE key='legacy_membership_migrated_v1'"
+    ).fetchone()
+    if not migrated:
+        try:
+            rows = conn.execute("SELECT paper_id,source_relpath FROM papers").fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        for row in rows:
+            paper_id = row["paper_id"] if isinstance(row, sqlite3.Row) else row[0]
+            source_relpath = row["source_relpath"] if isinstance(row, sqlite3.Row) else row[1]
+            has_any = conn.execute("SELECT 1 FROM paper_projects WHERE paper_id=? LIMIT 1", (paper_id,)).fetchone()
+            if has_any:
+                continue
+            slug = infer_project_slug(source_relpath)
+            ensure_project(
+                conn,
+                slug,
+                DEFAULT_PROJECT_NAME if slug == DEFAULT_PROJECT_SLUG else slug.replace("-", " ").title(),
+            )
+            assign_paper_to_project(conn, paper_id, slug)
+        conn.execute(
+            "INSERT OR REPLACE INTO project_schema_meta(key,value) VALUES('legacy_membership_migrated_v1',?)",
+            (now_iso(),),
+        )
     conn.commit()
 
 
@@ -132,18 +154,90 @@ def rename_project(conn: sqlite3.Connection, project_slug: str, name: str) -> No
     conn.commit()
 
 
-def assign_paper_to_project(conn: sqlite3.Connection, paper_id: str, project_slug: str) -> None:
+def touch_project(conn: sqlite3.Connection, project_slug: str) -> None:
+    slug = normalize_project_slug(project_slug)
+    conn.execute("UPDATE projects SET updated_at=? WHERE project_slug=?", (datetime.now(timezone.utc).isoformat(timespec="microseconds"), slug))
+
+
+def assign_paper_to_project(conn: sqlite3.Connection, paper_id: str, project_slug: str) -> bool:
     slug = ensure_project(conn, project_slug)
-    conn.execute(
+    cur = conn.execute(
         "INSERT OR IGNORE INTO paper_projects(paper_id,project_slug,assigned_at) VALUES (?,?,?)",
         (paper_id, slug, now_iso()),
     )
+    changed = bool(cur.rowcount)
+    if changed:
+        touch_project(conn, slug)
+    return changed
 
 
-def unassign_paper_from_project(conn: sqlite3.Connection, paper_id: str, project_slug: str) -> None:
+def unassign_paper_from_project(conn: sqlite3.Connection, paper_id: str, project_slug: str) -> bool:
     slug = normalize_project_slug(project_slug)
-    conn.execute("DELETE FROM paper_projects WHERE paper_id=? AND project_slug=?", (paper_id, slug))
+    cur = conn.execute("DELETE FROM paper_projects WHERE paper_id=? AND project_slug=?", (paper_id, slug))
+    changed = bool(cur.rowcount)
+    if changed:
+        touch_project(conn, slug)
     conn.commit()
+    return changed
+
+
+def paper_project_slugs(conn: sqlite3.Connection, paper_id: str) -> list[str]:
+    rows = conn.execute(
+        "SELECT project_slug FROM paper_projects WHERE paper_id=? ORDER BY project_slug",
+        (paper_id,),
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
+def set_project_membership_batch(
+    conn: sqlite3.Connection,
+    paper_ids: Iterable[str],
+    *,
+    action: str,
+    current_project: str,
+    target_project: str | None = None,
+) -> dict[str, int]:
+    current = normalize_project_slug(current_project)
+    target = normalize_project_slug(target_project) if target_project not in (None, "") else None
+    action = str(action or "").strip().lower()
+    allowed = {"add_current", "remove_current", "copy_to", "move_to"}
+    if action not in allowed:
+        raise ValueError(f"Unsupported membership action: {action}")
+    if action in {"copy_to", "move_to"}:
+        if not target:
+            raise ValueError("Target project is required")
+        if target == current:
+            raise ValueError("Target project must differ from the current project")
+        if conn.execute("SELECT 1 FROM projects WHERE project_slug=?", (target,)).fetchone() is None:
+            raise ValueError(f"Unknown target project: {target}")
+
+    ids = [str(x).strip() for x in paper_ids if str(x).strip()]
+    counts = {"requested": len(ids), "added": 0, "removed": 0, "skipped": 0}
+    for paper_id in ids:
+        exists = conn.execute("SELECT 1 FROM papers WHERE paper_id=? AND active=1", (paper_id,)).fetchone()
+        if not exists:
+            continue
+        if action == "add_current":
+            counts["added"] += int(assign_paper_to_project(conn, paper_id, current))
+        elif action == "remove_current":
+            before = conn.execute("SELECT 1 FROM paper_projects WHERE paper_id=? AND project_slug=?", (paper_id, current)).fetchone()
+            if before:
+                conn.execute("DELETE FROM paper_projects WHERE paper_id=? AND project_slug=?", (paper_id, current))
+                touch_project(conn, current)
+                counts["removed"] += 1
+        elif action == "copy_to":
+            counts["added"] += int(assign_paper_to_project(conn, paper_id, target or current))
+        elif action == "move_to":
+            before = conn.execute("SELECT 1 FROM paper_projects WHERE paper_id=? AND project_slug=?", (paper_id, current)).fetchone()
+            if not before:
+                counts["skipped"] += 1
+                continue
+            counts["added"] += int(assign_paper_to_project(conn, paper_id, target or current))
+            conn.execute("DELETE FROM paper_projects WHERE paper_id=? AND project_slug=?", (paper_id, current))
+            touch_project(conn, current)
+            counts["removed"] += 1
+    conn.commit()
+    return counts
 
 
 def project_paper_ids(conn: sqlite3.Connection, project_slug: str, *, active_only: bool = True) -> list[str]:

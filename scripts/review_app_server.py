@@ -30,6 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,36 +49,45 @@ from lib.projects import (
     project_paper_ids,
     project_upload_dir,
     rename_project,
+    set_project_membership_batch,
 )
 
-APP_VERSION = "4.1.5-hierarchical-cluster-naming"
+APP_VERSION = "4.1.6-master-library-cluster-lists-resizable-ui"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FolioSort</title><style>
-:root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;background:#151515;color:#e8e8eb}*{box-sizing:border-box}body{margin:0;background:#151515}.wrap{max-width:1180px;margin:0 auto;padding:24px}h1{font-size:26px;margin:0 0 5px}h2{font-size:16px;margin:0 0 10px}.muted{color:#a1a1aa;font-size:12px}.grid{display:grid;grid-template-columns:1.08fr .92fr;gap:16px;margin-top:18px;align-items:start}.card{background:#1c1c1f;border:1px solid #33343a;border-radius:12px;padding:16px}.drop{border:2px dashed #555862;border-radius:12px;padding:28px 18px;text-align:center;background:#202024;transition:.15s}.drop.drag{border-color:#b6b7c3;background:#28282e}.drop b{display:block;font-size:18px;margin-bottom:7px}button,.btn,input,select{background:#2a2a30;color:#f4f4f5;border:1px solid #4a4a53;border-radius:8px;padding:10px 13px;font:inherit}button,.btn{cursor:pointer}button:hover,.btn:hover{border-color:#85858f}button:disabled{opacity:.42;cursor:not-allowed}.primary{background:#373741;font-weight:700;flex:1}.danger{background:#472525;border-color:#7d3838;font-weight:700;flex:0 0 160px}.projectrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar button{flex:1;min-width:150px}.pipelineActions{display:flex;gap:8px;margin-top:12px}.statusline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}.pill{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid #444752;color:#d4d4d8}.ok{color:#86efac;border-color:#365c43}.busy{color:#fde68a;border-color:#6b5a2c}.bad{color:#fca5a5;border-color:#713c3c}.files{margin-top:12px;max-height:250px;overflow:auto}.file{padding:8px 0;border-top:1px solid #303036;font-size:13px;word-break:break-all}.log{background:#111113;border:1px solid #303036;border-radius:8px;padding:10px;white-space:pre-wrap;overflow:auto;max-height:650px;min-height:480px;font:12px/1.45 Consolas,monospace}.hint{margin-top:8px;font-size:12px;color:#a1a1aa}.counts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.metric{background:#222226;border-radius:8px;padding:10px}.metric b{font-size:20px;display:block}.hidden{display:none}.projectName{font-size:13px;margin-top:8px}.divider{height:1px;background:#303036;margin:16px 0}.subhead{font-size:14px;font-weight:700;margin:0 0 10px}.results{margin-top:16px}@media(max-width:800px){.grid{grid-template-columns:1fr}.wrap{padding:14px}.counts{grid-template-columns:1fr 1fr}.projectrow{grid-template-columns:1fr 1fr}.projectrow select{grid-column:1/-1}.pipelineActions{flex-direction:column}.danger{flex:auto}.log{min-height:300px;max-height:430px}}
+:root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;background:#151515;color:#e8e8eb}*{box-sizing:border-box}body{margin:0;background:#151515}.wrap{max-width:1220px;margin:0 auto;padding:24px}h1{font-size:26px;margin:0 0 5px}h2{font-size:16px;margin:0 0 10px}.muted{color:#a1a1aa;font-size:12px;line-height:1.45}.grid{display:grid;grid-template-columns:1.08fr .92fr;gap:16px;margin-top:18px;align-items:start}.card{background:#1c1c1f;border:1px solid #33343a;border-radius:12px;padding:16px}.drop{border:2px dashed #555862;border-radius:12px;padding:28px 18px;text-align:center;background:#202024;transition:.15s}.drop.drag{border-color:#b6b7c3;background:#28282e}.drop b{display:block;font-size:18px;margin-bottom:7px}button,.btn,input,select{background:#2a2a30;color:#f4f4f5;border:1px solid #4a4a53;border-radius:8px;padding:10px 13px;font:inherit}button,.btn{cursor:pointer}button:hover,.btn:hover{border-color:#85858f}button:disabled,.btn:disabled{opacity:.42;cursor:not-allowed}.primary{background:#373741;font-weight:700;flex:1}.danger{background:#472525;border-color:#7d3838;font-weight:700;flex:0 0 160px}.projectrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar button{flex:1;min-width:150px}.pipelineActions{display:flex;gap:8px;margin-top:12px}.statusline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}.pill{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid #444752;color:#d4d4d8}.ok{color:#86efac;border-color:#365c43}.busy{color:#fde68a;border-color:#6b5a2c}.bad{color:#fca5a5;border-color:#713c3c}.files{margin-top:12px;max-height:250px;overflow:auto}.file{padding:8px 0;border-top:1px solid #303036;font-size:13px;word-break:break-all}.log{background:#111113;border:1px solid #303036;border-radius:8px;padding:10px;white-space:pre-wrap;overflow:auto;max-height:650px;min-height:480px;font:12px/1.45 Consolas,monospace}.hint{margin-top:8px;font-size:12px;color:#a1a1aa;line-height:1.45}.counts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.metric{background:#222226;border-radius:8px;padding:10px}.metric b{font-size:20px;display:block}.hidden{display:none}.projectName{font-size:13px;margin-top:8px}.divider{height:1px;background:#303036;margin:16px 0}.subhead{font-size:14px;font-weight:700;margin:0 0 10px}.results,.libraryCard{margin-top:16px}.libraryControls{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(150px,.7fr);gap:8px}.libraryActions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.libraryTarget{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;margin-top:8px;align-items:center}.libraryList{margin-top:10px;border:1px solid #303036;border-radius:8px;max-height:360px;overflow:auto;background:#18181b}.librow{display:grid;grid-template-columns:28px 58px 72px minmax(0,1fr);gap:8px;align-items:start;padding:9px 10px;border-top:1px solid #29292f;font-size:12px}.librow:first-child{border-top:0}.librow input{width:auto;margin:2px 0}.libtitle{font-weight:600;color:#e4e4e7;line-height:1.35}.libmeta{color:#9ca3af;font-size:11px;line-height:1.35;margin-top:2px}.member{color:#86efac}.notmember{color:#a1a1aa}.libsummary{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:8px}.libsummary .toolbar{margin:0}.smallbtn{padding:7px 9px;font-size:12px}.selection{color:#c4b5fd}@media(max-width:800px){.grid{grid-template-columns:1fr}.wrap{padding:14px}.counts{grid-template-columns:1fr 1fr}.projectrow{grid-template-columns:1fr 1fr}.projectrow select{grid-column:1/-1}.pipelineActions{flex-direction:column}.danger{flex:auto}.log{min-height:300px;max-height:430px}.libraryControls,.libraryActions,.libraryTarget{grid-template-columns:1fr}.librow{grid-template-columns:28px 58px 1fr}.librow .libyear{display:none}}
 </style></head><body><div class="wrap">
 <h1>FolioSort</h1><div class="muted">Local literature workspace for project-scoped PDF analysis, graph generation, curation, and original-PDF access. WSL runs in the background.</div>
 <div class="grid"><div>
-<div class="card"><h2>Project</h2><div class="projectrow"><select id="project"></select><button id="newProject">New project</button><button id="renameProject">Rename</button></div><div id="projectInfo" class="hint">Each project gets its own Literature Network and Scientific Knowledge Graph. Analysis data remain shared and deduplicated globally.</div><div class="counts"><div class="metric"><b id="active">-</b><span class="muted">active papers</span></div><div class="metric"><b id="memory">-</b><span class="muted">memories ready</span></div><div class="metric"><b id="networkState">-</b><span class="muted">network</span></div></div><div id="projectDisplay" class="projectName muted"></div><div class="divider"></div><div class="subhead">Add papers</div><div id="drop" class="drop" tabindex="0"><b>Drop PDF files here</b><span>or click to choose files</span><input id="pick" type="file" accept="application/pdf,.pdf" multiple class="hidden"></div><div id="uploadMsg" class="hint">PDFs dropped here are assigned to the selected project. Exact byte-identical duplicates are deleted, while the existing paper is also assigned to this project.</div><div id="files" class="files"></div><div class="pipelineActions"><button id="analyze" class="primary">Analyze / update selected project</button><button id="stopPipeline" class="danger" disabled>Stop pipeline</button></div><div class="statusline"><span id="pipePill" class="pill">Pipeline: checking</span><span id="svcPill" class="pill">FolioSort: ready</span></div></div>
-<div class="card results"><h2>Results</h2><div class="toolbar"><button id="network">Literature network</button><button id="knowledge">Knowledge graph</button><button id="curation">Curation editor</button></div><div class="hint">Results open only the selected project. Network nodes use “Family name, year”. Knowledge Graph expansion has Back/Forward history and adjustable label size.</div></div>
+<div class="card"><h2>Project</h2><div class="projectrow"><select id="project"></select><button id="newProject">New project</button><button id="renameProject">Rename</button></div><div id="projectInfo" class="hint">Projects are views of one shared canonical PDF library. Adding/removing a paper from a project changes membership only; the original PDF and shared analysis remain untouched.</div><div class="counts"><div class="metric"><b id="active">-</b><span class="muted">active papers</span></div><div class="metric"><b id="memory">-</b><span class="muted">memories ready</span></div><div class="metric"><b id="networkState">-</b><span class="muted">network</span></div></div><div id="projectDisplay" class="projectName muted"></div><div class="divider"></div><div class="subhead">Add papers</div><div id="drop" class="drop" tabindex="0"><b>Drop PDF files here</b><span>or click to choose files</span><input id="pick" type="file" accept="application/pdf,.pdf" multiple class="hidden"></div><div id="uploadMsg" class="hint">New PDFs are ingested into the canonical library and assigned to the selected project. Exact byte-identical duplicates reuse the existing paper ID.</div><div id="files" class="files"></div><div class="pipelineActions"><button id="analyze" class="primary">Analyze / update selected project</button><button id="stopPipeline" class="danger" disabled>Stop pipeline</button></div><div class="statusline"><span id="pipePill" class="pill">Pipeline: checking</span><span id="svcPill" class="pill">FolioSort: ready</span></div></div>
+<div class="card libraryCard"><h2>Master PDF library</h2><div class="muted">Canonical parent list. Project membership can be changed without moving or deleting the source PDF, extracted text, summaries, embeddings, or curation.</div><div class="libraryControls" style="margin-top:10px"><input id="librarySearch" type="search" placeholder="Search paper ID, author, year, title, journal, DOI, filename…"><select id="libraryFilter"><option value="all">All canonical papers</option><option value="in">In current project</option><option value="out">Not in current project</option></select></div><div class="libsummary"><span id="librarySummary" class="muted">Loading library…</span><div class="toolbar"><button id="selectVisible" class="smallbtn">Select visible</button><button id="clearLibrarySelection" class="smallbtn">Clear selection</button></div></div><div id="libraryList" class="libraryList"></div><div class="libraryActions"><button id="addCurrent" class="primary">Add selected to current project</button><button id="removeCurrent">Remove selected from current project</button></div><div class="libraryTarget"><select id="targetProject"></select><button id="copyTarget">Copy to target</button><button id="moveTarget">Move to target</button></div><div id="libraryMsg" class="hint">Removing from a project never deletes the canonical PDF. “Move” means add membership to the target project and remove membership from the current project.</div></div>
+<div class="card results"><h2>Results</h2><div class="toolbar"><button id="network">Literature network</button><button id="knowledge">Knowledge graph</button><button id="curation">Curation editor</button></div><div class="hint">Results open only the selected project. After changing project membership, run Analyze/update on affected projects so their graphs reflect the new paper set.</div></div>
 </div><div><div class="card"><h2>Pipeline log</h2><div id="log" class="log">Waiting for status...</div></div></div></div></div>
 <script>
-const $=x=>document.getElementById(x),drop=$('drop'),pick=$('pick');let currentProject=localStorage.getItem('foliosort-project')||localStorage.getItem('review-project')||'default';let refreshing=false;
+const $=x=>document.getElementById(x),drop=$('drop'),pick=$('pick');let currentProject=localStorage.getItem('foliosort-project')||localStorage.getItem('review-project')||'default';let refreshing=false;let libraryPapers=[];let selectedLibraryPapers=new Set();let projectRows=[];
 function saveProject(){localStorage.setItem('foliosort-project',currentProject)}
-function esc(s){return String(s??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}function fmtBytes(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function fmtBytes(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
+function yearNum(v){const y=parseInt(v,10);return Number.isFinite(y)&&y>0?y:9999}
 async function jsonFetch(url,opt={}){const r=await fetch(url,opt);const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j}
 function purl(path){return path+(path.includes('?')?'&':'?')+'project='+encodeURIComponent(currentProject)}
-async function upload(list){const fs=[...list].filter(f=>f.name.toLowerCase().endsWith('.pdf'));if(!fs.length)return;const fd=new FormData();fs.forEach(f=>fd.append('files',f,f.name));$('uploadMsg').textContent=`Uploading ${fs.length} PDF(s) to ${currentProject}...`;try{const j=await jsonFetch(purl('/api/upload'),{method:'POST',body:fd});$('uploadMsg').textContent=j.message;await refresh();}catch(e){$('uploadMsg').textContent='Upload failed: '+e}}
+async function upload(list){const fs=[...list].filter(f=>f.name.toLowerCase().endsWith('.pdf'));if(!fs.length)return;const fd=new FormData();fs.forEach(f=>fd.append('files',f,f.name));$('uploadMsg').textContent=`Uploading ${fs.length} PDF(s) to ${currentProject}...`;try{const j=await jsonFetch(purl('/api/upload'),{method:'POST',body:fd});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Upload failed: '+e}}
 drop.onclick=()=>pick.click();drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick.click()}};pick.onchange=()=>upload(pick.files);['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>upload(e.dataTransfer.files));
-$('project').addEventListener('change',()=>{currentProject=$('project').value;saveProject();refresh()});
-$('newProject').onclick=async()=>{const name=prompt('New project name');if(!name)return;try{const j=await jsonFetch('/api/create_project?name='+encodeURIComponent(name),{method:'POST'});currentProject=j.project_slug;saveProject();await refresh();$('uploadMsg').textContent=`Project created: ${j.name}`;}catch(e){alert(e)}};
-$('renameProject').onclick=async()=>{const selected=$('project').selectedOptions[0];const name=prompt('New display name for this project',selected?selected.textContent.replace(/\s*\(\d+\)\s*$/,''):'');if(!name)return;try{await jsonFetch('/api/rename_project?project='+encodeURIComponent(currentProject)+'&name='+encodeURIComponent(name),{method:'POST'});await refresh();}catch(e){alert(e)}};
-$('analyze').onclick=async()=>{try{const j=await jsonFetch(purl('/api/analyze'),{method:'POST'});$('uploadMsg').textContent=j.message;await refresh();}catch(e){$('uploadMsg').textContent='Could not start pipeline: '+e}};
-$('stopPipeline').onclick=async()=>{if(!confirm('Stop the running pipeline? Completed outputs will be kept.'))return;$('stopPipeline').disabled=true;$('uploadMsg').textContent='Stopping pipeline...';try{const j=await jsonFetch('/api/stop_pipeline',{method:'POST'});$('uploadMsg').textContent=j.message;await refresh();}catch(e){$('uploadMsg').textContent='Could not stop pipeline: '+e;await refresh()}};
+function populateTargetProjects(){const target=$('targetProject');target.innerHTML='<option value="">— target project —</option>'+projectRows.filter(p=>p.project_slug!==currentProject).map(p=>`<option value="${esc(p.project_slug)}">${esc(p.name)} (${p.active_papers})</option>`).join('')}
+function visibleLibraryRows(){const q=$('librarySearch').value.trim().toLowerCase(),filter=$('libraryFilter').value;return libraryPapers.filter(p=>{if(filter==='in'&&!p.in_current_project)return false;if(filter==='out'&&p.in_current_project)return false;if(!q)return true;const hay=[p.paper_id,p.authors,p.year,p.title,p.journal,p.doi,p.original_filename,(p.project_names||[]).join(' ')].join(' ').toLowerCase();return hay.includes(q)}).sort((a,b)=>yearNum(a.year)-yearNum(b.year)||(a.authors||'').localeCompare(b.authors||'')||(a.title||'').localeCompare(b.title||''))}
+function renderLibrary(){const rows=visibleLibraryRows();$('librarySummary').innerHTML=`${rows.length}/${libraryPapers.length} shown · <span class="selection">${selectedLibraryPapers.size} selected</span>`;$('libraryList').innerHTML=rows.map(p=>`<label class="librow"><input type="checkbox" data-paper="${esc(p.paper_id)}" ${selectedLibraryPapers.has(p.paper_id)?'checked':''}><span>${esc(p.paper_id)}</span><span class="libyear">${esc(p.year??'?')}</span><span><div class="libtitle">${esc(p.title||p.original_filename||'(untitled)')}</div><div class="libmeta">${esc(p.authors||'')} ${p.journal?`· ${esc(p.journal)}`:''}${p.doi?` · ${esc(p.doi)}`:''}<br><span class="${p.in_current_project?'member':'notmember'}">${p.in_current_project?'In current project':'Not in current project'}</span>${(p.project_names||[]).length?` · projects: ${esc(p.project_names.join(', '))}`:''}</div></span></label>`).join('')||'<div class="muted" style="padding:12px">No matching papers.</div>';$('libraryList').querySelectorAll('[data-paper]').forEach(cb=>cb.addEventListener('change',()=>{if(cb.checked)selectedLibraryPapers.add(cb.dataset.paper);else selectedLibraryPapers.delete(cb.dataset.paper);renderLibrary()}));populateTargetProjects()}
+async function refreshLibrary(){try{const j=await jsonFetch(purl('/api/library'));libraryPapers=j.papers||[];projectRows=j.projects||projectRows;const valid=new Set(libraryPapers.map(p=>p.paper_id));selectedLibraryPapers=new Set([...selectedLibraryPapers].filter(x=>valid.has(x)));renderLibrary()}catch(e){$('libraryMsg').textContent='Could not load Master PDF library: '+e}}
+async function membershipAction(action){const ids=[...selectedLibraryPapers];if(!ids.length){alert('Select at least one paper in the Master PDF library.');return}const target=(action==='copy_to'||action==='move_to')?$('targetProject').value:null;if((action==='copy_to'||action==='move_to')&&!target){alert('Choose a target project.');return}if(action==='remove_current'&&!confirm(`Remove ${ids.length} selected paper(s) from the current project? The canonical PDFs will NOT be deleted.`))return;if(action==='move_to'&&!confirm(`Move ${ids.length} selected paper membership(s) from the current project to the target project? Canonical PDFs will NOT be moved on disk.`))return;$('libraryMsg').textContent='Updating project membership…';try{const j=await jsonFetch(purl('/api/project_membership'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,paper_ids:ids,target_project:target})});$('libraryMsg').textContent=j.message;selectedLibraryPapers.clear();await refresh();await refreshLibrary()}catch(e){$('libraryMsg').textContent='Membership update failed: '+e}}
+$('librarySearch').addEventListener('input',renderLibrary);$('libraryFilter').addEventListener('change',renderLibrary);$('selectVisible').onclick=()=>{visibleLibraryRows().forEach(p=>selectedLibraryPapers.add(p.paper_id));renderLibrary()};$('clearLibrarySelection').onclick=()=>{selectedLibraryPapers.clear();renderLibrary()};$('addCurrent').onclick=()=>membershipAction('add_current');$('removeCurrent').onclick=()=>membershipAction('remove_current');$('copyTarget').onclick=()=>membershipAction('copy_to');$('moveTarget').onclick=()=>membershipAction('move_to');
+$('project').addEventListener('change',async()=>{currentProject=$('project').value;saveProject();selectedLibraryPapers.clear();await refresh();await refreshLibrary()});
+$('newProject').onclick=async()=>{const name=prompt('New project name');if(!name)return;try{const j=await jsonFetch('/api/create_project?name='+encodeURIComponent(name),{method:'POST'});currentProject=j.project_slug;saveProject();await refresh();await refreshLibrary();$('uploadMsg').textContent=`Project created: ${j.name}`}catch(e){alert(e)}};
+$('renameProject').onclick=async()=>{const selected=$('project').selectedOptions[0];const name=prompt('New display name for this project',selected?selected.textContent.replace(/\s*\(\d+\)\s*$/,''):'');if(!name)return;try{await jsonFetch('/api/rename_project?project='+encodeURIComponent(currentProject)+'&name='+encodeURIComponent(name),{method:'POST'});await refresh();await refreshLibrary()}catch(e){alert(e)}};
+$('analyze').onclick=async()=>{try{const j=await jsonFetch(purl('/api/analyze'),{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not start pipeline: '+e}};
+$('stopPipeline').onclick=async()=>{if(!confirm('Stop the running pipeline? Completed outputs will be kept.'))return;$('stopPipeline').disabled=true;$('uploadMsg').textContent='Stopping pipeline...';try{const j=await jsonFetch('/api/stop_pipeline',{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not stop pipeline: '+e;await refresh()}};
 $('network').onclick=()=>window.open(purl('/network'),'_blank');$('knowledge').onclick=()=>window.open(purl('/knowledge'),'_blank');$('curation').onclick=async()=>{try{await jsonFetch('/api/start_curation',{method:'POST'});window.open('http://127.0.0.1:8765/','_blank')}catch(e){alert(e)}};
-async function refresh(){if(refreshing)return;refreshing=true;try{const j=await jsonFetch(purl('/api/status'));const sel=$('project');const projects=j.projects||[];if(!projects.some(p=>p.project_slug===currentProject)){currentProject=projects[0]?.project_slug||'default';saveProject()}sel.innerHTML=projects.map(p=>`<option value="${esc(p.project_slug)}" ${p.project_slug===currentProject?'selected':''}>${esc(p.name)} (${p.active_papers})</option>`).join('');$('active').textContent=j.active_papers;$('memory').textContent=j.memory_count;$('networkState').textContent=j.network_ready?'ready':'not yet';$('projectDisplay').textContent=`${j.project_name} · ${currentProject}`;let runText=j.pipeline_running?'running':'idle';if(j.pipeline_running&&j.running_project_name)runText+=` · ${j.running_project_name}`;$('pipePill').textContent='Pipeline: '+runText;$('pipePill').className='pill '+(j.pipeline_running?'busy':'ok');$('stopPipeline').disabled=!j.pipeline_stoppable;$('stopPipeline').title=j.pipeline_running&&!j.pipeline_stoppable?'This pipeline was not started by FolioSort, so FolioSort will not kill an unknown terminal process.':'';$('files').innerHTML=(j.raw_pdfs||[]).slice(-30).reverse().map(f=>`<div class="file">${esc(f.name)} <span class="muted">${fmtBytes(f.size)}</span></div>`).join('')||'<div class="muted">No PDFs in this project yet.</div>';$('log').textContent=j.log_tail||'No pipeline log yet.';const L=$('log');L.scrollTop=L.scrollHeight;$('svcPill').textContent='FolioSort: ready';$('svcPill').className='pill ok'}catch(e){$('svcPill').textContent='FolioSort: disconnected';$('svcPill').className='pill bad'}finally{refreshing=false}}
-refresh();setInterval(refresh,2500);
+async function refresh(){if(refreshing)return;refreshing=true;try{const j=await jsonFetch(purl('/api/status'));const sel=$('project');projectRows=j.projects||[];if(!projectRows.some(p=>p.project_slug===currentProject)){currentProject=projectRows[0]?.project_slug||'default';saveProject()}sel.innerHTML=projectRows.map(p=>`<option value="${esc(p.project_slug)}" ${p.project_slug===currentProject?'selected':''}>${esc(p.name)} (${p.active_papers})</option>`).join('');populateTargetProjects();$('active').textContent=j.active_papers;$('memory').textContent=j.memory_count;$('networkState').textContent=j.network_stale?'stale':(j.network_ready?'ready':'not yet');$('projectDisplay').textContent=`${j.project_name} · ${currentProject}`;let runText=j.pipeline_running?'running':'idle';if(j.pipeline_running&&j.running_project_name)runText+=` · ${j.running_project_name}`;$('pipePill').textContent='Pipeline: '+runText;$('pipePill').className='pill '+(j.pipeline_running?'busy':'ok');$('stopPipeline').disabled=!j.pipeline_stoppable;$('stopPipeline').title=j.pipeline_running&&!j.pipeline_stoppable?'This pipeline was not started by FolioSort, so FolioSort will not kill an unknown terminal process.':'';$('files').innerHTML=(j.raw_pdfs||[]).slice(-30).reverse().map(f=>`<div class="file">${esc(f.name)} <span class="muted">${fmtBytes(f.size)}</span>${f.paper_id?` <span class="muted">(${esc(f.paper_id)})</span>`:''}</div>`).join('')||'<div class="muted">No PDFs in this project yet.</div>';$('log').textContent=j.log_tail||'No pipeline log yet.';const L=$('log');L.scrollTop=L.scrollHeight;$('svcPill').textContent='FolioSort: ready';$('svcPill').className='pill ok'}catch(e){$('svcPill').textContent='FolioSort: disconnected';$('svcPill').className='pill bad'}finally{refreshing=false}}
+(async()=>{await refresh();await refreshLibrary()})();setInterval(refresh,2500);setInterval(refreshLibrary,15000);
 </script></body></html>'''
 
 
@@ -235,6 +245,116 @@ class FolioSortApp:
                 if path.is_file():
                     result[path.resolve().as_posix()] = {"name": path.name, "size": path.stat().st_size, "paper_id": None}
         return sorted(result.values(), key=lambda item: item["name"].casefold())
+
+    @staticmethod
+    def _authors_text(authors: Any) -> str:
+        if not authors:
+            return ""
+        if isinstance(authors, str):
+            return authors.strip()
+        out: list[str] = []
+        if isinstance(authors, list):
+            for author in authors:
+                if isinstance(author, str):
+                    value = author.strip()
+                elif isinstance(author, dict):
+                    value = str(
+                        author.get("name")
+                        or author.get("display_name")
+                        or author.get("raw")
+                        or " ".join(
+                            x for x in [str(author.get("given") or "").strip(), str(author.get("family") or "").strip()] if x
+                        )
+                    ).strip()
+                else:
+                    value = str(author).strip()
+                if value:
+                    out.append(value)
+        return "; ".join(out)
+
+    def _paper_metadata(self, paper_id: str) -> dict[str, Any]:
+        candidates = [
+            self.root / "data" / "curated" / f"{paper_id}.metadata.json",
+            self.root / "data" / "metadata" / f"{paper_id}.metadata.json",
+        ]
+        payload: dict[str, Any] = {}
+        for path in candidates:
+            if not path.exists():
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                break
+            except Exception:
+                continue
+        canonical = payload.get("canonical") if isinstance(payload, dict) else {}
+        if not isinstance(canonical, dict):
+            canonical = {}
+        return {
+            "title": str(canonical.get("title") or "").strip(),
+            "year": canonical.get("year"),
+            "journal": str(canonical.get("journal") or "").strip(),
+            "doi": str(canonical.get("doi") or "").strip(),
+            "authors": self._authors_text(canonical.get("authors")),
+        }
+
+    def master_library(self, current_project: str) -> list[dict[str, Any]]:
+        slug = normalize_project_slug(current_project)
+        conn = self.db()
+        try:
+            project_rows = conn.execute("SELECT project_slug,name FROM projects ORDER BY lower(name),project_slug").fetchall()
+            project_names = {str(row[0]): str(row[1]) for row in project_rows}
+            memberships: dict[str, list[str]] = {}
+            for row in conn.execute("SELECT paper_id,project_slug FROM paper_projects ORDER BY paper_id,project_slug").fetchall():
+                memberships.setdefault(str(row[0]), []).append(str(row[1]))
+            rows = conn.execute(
+                "SELECT paper_id,source_relpath,original_filename,file_size,title,year,journal,doi FROM papers WHERE active=1 ORDER BY paper_id"
+            ).fetchall()
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                paper_id = str(row["paper_id"])
+                meta = self._paper_metadata(paper_id)
+                if not meta.get("title"):
+                    meta["title"] = str(row["title"] or "").strip()
+                if meta.get("year") in (None, ""):
+                    meta["year"] = row["year"]
+                if not meta.get("journal"):
+                    meta["journal"] = str(row["journal"] or "").strip()
+                if not meta.get("doi"):
+                    meta["doi"] = str(row["doi"] or "").strip()
+                member_slugs = memberships.get(paper_id, [])
+                result.append({
+                    "paper_id": paper_id,
+                    "source_relpath": str(row["source_relpath"] or ""),
+                    "original_filename": str(row["original_filename"] or Path(str(row["source_relpath"] or "")).name),
+                    "file_size": int(row["file_size"] or 0),
+                    **meta,
+                    "project_slugs": member_slugs,
+                    "project_names": [project_names.get(x, x) for x in member_slugs],
+                    "in_current_project": slug in member_slugs,
+                })
+            return result
+        finally:
+            conn.close()
+
+    def update_project_memberships(
+        self,
+        *,
+        current_project: str,
+        paper_ids: list[str],
+        action: str,
+        target_project: str | None = None,
+    ) -> dict[str, int]:
+        conn = self.db()
+        try:
+            return set_project_membership_batch(
+                conn,
+                paper_ids,
+                action=action,
+                current_project=current_project,
+                target_project=target_project,
+            )
+        finally:
+            conn.close()
 
     def resolve_pdf(self, paper_id: str) -> Path:
         conn = self.db()
@@ -469,6 +589,18 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/status":
             slug = self.project_from_query(parsed)
             running_slug = APP.running_project_slug()
+            projects = APP.projects()
+            current_project_row = next((p for p in projects if p.get("project_slug") == slug), {})
+            network_path = project_network_dir(APP.root, slug) / "network.html"
+            network_stale = False
+            if network_path.exists() and current_project_row.get("updated_at"):
+                try:
+                    updated = datetime.fromisoformat(str(current_project_row["updated_at"]).replace("Z", "+00:00"))
+                    if updated.tzinfo is None:
+                        updated = updated.replace(tzinfo=timezone.utc)
+                    network_stale = network_path.stat().st_mtime < updated.timestamp()
+                except Exception:
+                    network_stale = False
             self.send_json({
                 "pipeline_running": APP.pipeline_running(),
                 "pipeline_stoppable": APP.owned_pipeline_pid() is not None,
@@ -476,13 +608,22 @@ class Handler(BaseHTTPRequestHandler):
                 "running_project_name": APP.project_name(running_slug) if running_slug else None,
                 "project_slug": slug,
                 "project_name": APP.project_name(slug),
-                "projects": APP.projects(),
+                "projects": projects,
                 "active_papers": APP.active_papers(slug),
                 "memory_count": APP.memory_count(slug),
-                "network_ready": (project_network_dir(APP.root, slug) / "network.html").exists(),
+                "network_ready": network_path.exists(),
+                "network_stale": network_stale,
                 "knowledge_ready": (project_knowledge_dir(APP.root, slug) / "knowledge.html").exists(),
                 "raw_pdfs": APP.project_raw_files(slug),
                 "log_tail": APP.log_tail(),
+            }); return
+        if parsed.path == "/api/library":
+            slug = self.project_from_query(parsed)
+            self.send_json({
+                "ok": True,
+                "project_slug": slug,
+                "papers": APP.master_library(slug),
+                "projects": APP.projects(),
             }); return
         if parsed.path == "/network":
             slug = self.project_from_query(parsed); self.serve_file(project_network_dir(APP.root, slug) / "network.html", "text/html; charset=utf-8"); return
@@ -515,6 +656,31 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(length).decode("utf-8"))
                 result = APP.recluster_network(slug, list(body.get("layers") or []), float(body.get("resolution", 1.0)))
                 self.send_json(result); return
+            if parsed.path == "/api/project_membership":
+                slug = self.project_from_query(parsed)
+                length = int(self.headers.get("Content-Length") or 0)
+                if length <= 0 or length > 1024 * 1024:
+                    raise ValueError("A JSON membership request body is required")
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                paper_ids = [str(x) for x in (body.get("paper_ids") or [])]
+                if not paper_ids:
+                    raise ValueError("Select at least one paper")
+                action = str(body.get("action") or "")
+                target = body.get("target_project")
+                counts = APP.update_project_memberships(
+                    current_project=slug, paper_ids=paper_ids, action=action, target_project=target
+                )
+                action_labels = {
+                    "add_current": "Added papers to the current project",
+                    "remove_current": "Removed papers from the current project",
+                    "copy_to": "Copied project membership to the target project",
+                    "move_to": "Moved project membership to the target project",
+                }
+                self.send_json({
+                    "ok": True,
+                    "counts": counts,
+                    "message": f"{action_labels.get(action, 'Updated project membership')}. Canonical PDFs and shared analysis were not moved or deleted. Run Analyze/update for affected projects to rebuild their graphs.",
+                }); return
             if parsed.path == "/api/create_project":
                 q = urllib.parse.parse_qs(parsed.query); name = (q.get("name") or [""])[0]
                 slug = APP.create_project(name)

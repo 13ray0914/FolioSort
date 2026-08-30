@@ -131,7 +131,8 @@ def main() -> None:
                 "UPDATE papers SET last_seen_at=?, active=1, file_size=?, original_filename=? WHERE paper_id=?",
                 (now_iso(), stat.st_size, pdf.name, by_path["paper_id"]),
             )
-            assign_paper_to_project(conn, by_path["paper_id"], project_slug)
+            # Existing canonical files no longer force project membership from their physical path.
+            # Project membership is managed independently through the Master PDF Library.
             conn.commit()
             unchanged += 1
             continue
@@ -218,7 +219,7 @@ def main() -> None:
                 """,
                 (digest, stat.st_size, pdf.name, now_iso(), by_path["paper_id"]),
             )
-            assign_paper_to_project(conn, by_path["paper_id"], project_slug)
+            # Preserve current project memberships when the bytes at an existing canonical path change.
             conn.commit()
             reset_stages(conn, by_path["paper_id"])
             print(f"CHANGED {by_path['paper_id']}  {rel} -> downstream stages reset")
