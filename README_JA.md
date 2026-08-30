@@ -864,3 +864,17 @@ python run_pipeline.py
 ```
 
 で残りを処理します。
+
+# 22. ライセンス
+
+FolioSortは [GNU Affero General Public License v3.0 以降](LICENSE) (AGPL-3.0-or-later) で配布されます。
+
+主な理由は、依存パッケージの一部がコピーレフトライセンスであることです。
+
+| パッケージ | ライセンス | 用途 |
+|---|---|---|
+| [PyMuPDF](https://github.com/pymupdf/PyMuPDF) | AGPL-3.0（商用ライセンス代替あり） | `scripts/05_extract_visual_assets.py` でのPDF図表抽出 |
+| [python-igraph](https://github.com/igraph/python-igraph) | GPL-2.0-or-later | `lib/network_runtime.py`, `scripts/13_build_multiplex_network.py` でのネットワーク解析 |
+| [leidenalg](https://github.com/vtraag/leidenalg) | GPL-3.0 | 同上、クラスタリング |
+
+これら以外の主要依存（requests、lxml、jsonschema、rapidfuzz、networkx、scikit-learn、numpy、scipy、torch、transformers、adapters、safetensors、allenai/specter2モデル重み）はApache-2.0/BSD/MITなどの寛容なライセンスで、AGPL-3.0と両立します。GROBIDはDocker経由でHTTP APIとして呼び出すのみで、プロセスは分離されています。生成HTMLが参照する`vis-network`（unpkg CDN配信）はApache-2.0/MITデュアルライセンスです。
