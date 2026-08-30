@@ -50,7 +50,7 @@ from lib.projects import (
     rename_project,
 )
 
-APP_VERSION = "4.1.4-deterministic-cluster-naming"
+APP_VERSION = "4.1.5-hierarchical-cluster-naming"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -276,7 +276,7 @@ class FolioSortApp:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=1200,
+            timeout=2400,
             check=False,
         )
         if completed.returncode != 0:
@@ -326,6 +326,7 @@ class FolioSortApp:
             try:
                 naming = self.name_network_clusters(slug, result, force=False)
                 result["cluster_names"] = naming.get("cluster_names") or {}
+                result["cluster_naming_summary"] = naming.get("naming_summary") or {}
                 result["cluster_naming_warnings"] = naming.get("warnings") or []
                 result["cluster_naming_reproducibility"] = naming.get("reproducibility") or {}
             except Exception as exc:

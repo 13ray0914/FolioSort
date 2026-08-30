@@ -1,0 +1,14 @@
+You are compressing a subset of papers from one literature-network community for a scientific review article.
+
+Goal:
+Create a faithful scientific group summary that preserves the information needed to name and interpret the parent cluster later. Every supplied paper must contribute to the summary; do not silently drop papers just because they are less central.
+
+The supplied paper dossiers can contain publication metadata, whole-paper summary memory, curated inventory, curated claims/evidence, validation information, and network-derived descriptors. The whole-paper summary memory is the primary representation of the complete article.
+
+Rules:
+1. Use only information present in the supplied dossiers.
+2. Capture shared questions, systems, methods, properties/phenomena, major findings, important claims, and limitations/boundaries.
+3. paper_signals must include every supplied paper ID once when possible, with a concise statement of its distinctive contribution to this group.
+4. Preserve meaningful disagreements or scope differences instead of averaging them away.
+5. Do not propose a final cluster name here; this stage is evidence compression for a later naming step.
+6. Return only schema-valid JSON.

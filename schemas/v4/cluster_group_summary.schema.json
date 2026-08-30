@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["group_summary", "shared_scientific_questions", "systems_scope", "methods", "properties_phenomena", "major_findings", "important_claims", "limitations_or_boundaries", "paper_signals"],
+  "properties": {
+    "group_summary": {"type": "string", "minLength": 20, "maxLength": 2200},
+    "shared_scientific_questions": {"type": "array", "maxItems": 8, "items": {"type": "string", "maxLength": 320}},
+    "systems_scope": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 260}},
+    "methods": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 220}},
+    "properties_phenomena": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 220}},
+    "major_findings": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 420}},
+    "important_claims": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 420}},
+    "limitations_or_boundaries": {"type": "array", "maxItems": 8, "items": {"type": "string", "maxLength": 320}},
+    "paper_signals": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["paper_id", "contribution"],
+        "properties": {
+          "paper_id": {"type": "string", "pattern": "^P[0-9]+$"},
+          "contribution": {"type": "string", "minLength": 3, "maxLength": 380}
+        }
+      }
+    }
+  }
+}

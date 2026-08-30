@@ -54,7 +54,7 @@ from lib.v4_common import normalize_doi, normalize_openalex_id, normalize_title
 from lib.projects import ensure_project_schema, normalize_project_slug, project_name, project_network_dir, project_rows
 from lib.network_runtime import LAYER_COLORS, compute_layout_positions
 
-SCRIPT_VERSION = "multiplex-network-v4.1.4-deterministic-cluster-naming"
+SCRIPT_VERSION = "multiplex-network-v4.1.5-hierarchical-cluster-naming"
 
 
 def first_author_family(authors: list[Any] | None) -> str:
@@ -776,7 +776,8 @@ function renderClusterNarrative(){
   if(!ai){box.innerHTML=`<b>C${cid+1}: ${esc(c.label)}</b><br><span class="muted">No AI name cached for this clustering yet.</span>`;return;}
   const feats=(ai.distinguishing_features||[]).map(x=>`<li>${esc(x)}</li>`).join('');
   const reps=(ai.representative_paper_ids||[]).map(x=>`<span class="chip">${esc(x)}</span>`).join('');
-  box.innerHTML=`<div style="font-size:13px;color:#eee"><b>C${cid+1}: ${esc(ai.short_name||c.label)}</b></div><div style="margin-top:5px"><b>Suggested review section</b><br>${esc(ai.review_section_title||'')}</div><div style="margin-top:7px"><b>Why this name?</b><br>${esc(ai.rationale||'')}</div>${feats?`<div style="margin-top:7px"><b>Distinctive features</b><ul style="margin:4px 0 4px 18px;padding:0">${feats}</ul></div>`:''}<div style="margin-top:6px"><b>Technical label</b><br>${esc(ai.technical_label||c.label||'')}</div>${reps?`<div style="margin-top:6px"><b>Representative papers</b><br>${reps}</div>`:''}<div style="margin-top:6px" class="muted">Confidence: ${Number(ai.confidence||0).toFixed(2)} · ${ai.cache_hit?'reused content-addressed cache':'generated/cached'} · deterministic sampling target: temperature 0, fixed seed.</div>`;
+  const fallback=ai.source==='technical_fallback';const sourceLabel=fallback?'technical fallback':(ai.source==='ai_harmonized'?'AI harmonized across all clusters':(ai.source||'AI generated'));
+  box.innerHTML=`<div style="font-size:13px;color:#eee"><b>C${cid+1}: ${esc(ai.short_name||c.label)}</b>${fallback?' <span class="chip">AI unavailable</span>':''}</div><div style="margin-top:5px"><b>Suggested review section</b><br>${esc(ai.review_section_title||'')}</div><div style="margin-top:7px"><b>Why this name?</b><br>${esc(ai.rationale||'')}</div>${feats?`<div style="margin-top:7px"><b>Distinctive features</b><ul style="margin:4px 0 4px 18px;padding:0">${feats}</ul></div>`:''}<div style="margin-top:6px"><b>Technical label</b><br>${esc(ai.technical_label||c.label||'')}</div>${reps?`<div style="margin-top:6px"><b>Representative papers</b><br>${reps}</div>`:''}<div style="margin-top:6px" class="muted">Confidence: ${Number(ai.confidence||0).toFixed(2)} · source: ${esc(sourceLabel)} · ${ai.harmonize_cache_hit?'final name reused from content-addressed cache':(ai.candidate_cache_hit?'candidate reused from cache':'generated in this naming pipeline')}.</div>`;
 }
 function renderClusterUI(){
   currentClusters.sort((a,b)=>a.cluster_id-b.cluster_id);
@@ -809,6 +810,17 @@ function applyLayerView(){
 function scheduleView(){clearTimeout(renderTimer);renderTimer=setTimeout(applyLayerView,90);}
 
 function currentClusterRequest(force=false){return{network_signature:networkSignature,membership:currentMembership,clusters:currentClusters,selected_layers:[...currentClusteringLayers],resolution:Number(currentClusteringResolution),force};}
+function namingStatusText(result){
+  const summary=(result&&result.naming_summary)||(result&&result.cluster_naming_summary)||{};
+  const names=(result&&result.cluster_names)||currentClusterNames||{};
+  const total=Number(summary.total_clusters??Object.keys(names).length);
+  const ai=Number(summary.ai_named??Object.values(names).filter(x=>x&&String(x.source||'').startsWith('ai_')).length);
+  const fallback=Number(summary.fallback_labels??Object.values(names).filter(x=>x&&x.source==='technical_fallback').length);
+  const finalHits=Number(summary.final_cache_hits??Object.values(names).filter(x=>x&&x.harmonize_cache_hit).length);
+  const groupHits=Number(summary.group_cache_hits??0);
+  const warnings=Number(summary.warnings??((result&&result.warnings)||[]).length);
+  return `AI cluster names: ${ai}/${total} successful · ${fallback} fallback · ${finalHits} final cache hit${finalHits===1?'':'s'} · ${groupHits} group cache hit${groupHits===1?'':'s'}${warnings?` · ${warnings} warning${warnings===1?'':'s'}`:''}`;
+}
 async function nameCurrentClusters(force=false){
   const btn=document.getElementById(force?'forceNameClustersBtn':'nameClustersBtn');const other=document.getElementById(force?'nameClustersBtn':'forceNameClustersBtn');
   if(force&&!confirm('Force regeneration bypasses the content-addressed name cache. Existing scientific data are unchanged, but wording may differ. Continue?'))return null;
@@ -818,7 +830,7 @@ async function nameCurrentClusters(force=false){
     const result=await response.json();if(!response.ok)throw new Error(result.error||response.statusText);
     currentClusterNames=result.cluster_names||{};renderClusterUI();
     localStorage.setItem(`foliosort.network.clusterNames.${projectSlug}`,JSON.stringify({network_signature:networkSignature,membership:currentMembership,cluster_names:currentClusterNames}));
-    const hits=Object.values(currentClusterNames).filter(x=>x&&x.cache_hit).length;document.getElementById('reclusterInfo').textContent=`AI names ready for ${Object.keys(currentClusterNames).length} clusters (${hits} cache hit${hits===1?'':'s'}).`;
+    document.getElementById('reclusterInfo').textContent=namingStatusText(result);
     return result;
   }catch(error){document.getElementById('reclusterInfo').textContent='Cluster naming failed; technical labels remain available.';alert('Could not name clusters. Make sure local Qwen and FolioSort are running.\n\n'+error);return null;}finally{btn.disabled=false;other.disabled=false;}
 }
@@ -833,7 +845,7 @@ async function recluster(){
     const updates=[];for(const [id,pos] of Object.entries(result.positions||{}))updates.push({id,x:Number(pos.x||0),y:Number(pos.y||0)});if(updates.length)nodes.update(updates);
     renderClusterUI();cf.value='all';applyLayerView();network.fit({animation:{duration:280,easingFunction:'easeInOutQuad'}});
     localStorage.setItem(`foliosort.network.recluster.${projectSlug}`,JSON.stringify(result));
-    const named=Object.keys(currentClusterNames).length;const warnings=result.cluster_naming_warnings||[];info.textContent=`Reclustered into ${currentClusters.length} communities using ${selected.length} layer(s), resolution ${resolution.toFixed(2)}${named?`; AI names ready for ${named} cluster(s)`:''}${warnings.length?'; naming warning: '+warnings[0]:''}.`;
+    const warnings=result.cluster_naming_warnings||[];info.textContent=`Reclustered into ${currentClusters.length} communities using ${selected.length} layer(s), resolution ${resolution.toFixed(2)}. ${namingStatusText(result)}${warnings.length?` · ${warnings[0]}`:''}`;
   }catch(error){info.textContent='Reclustering failed. Make sure FolioSort is running.';alert('Could not recluster the selected layers.\n\n'+error);}finally{btn.disabled=false;}
 }
 function restoreBase(){
@@ -1239,15 +1251,17 @@ def main() -> None:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    timeout=1200,
+                    timeout=2400,
                     check=False,
                 )
                 if completed.returncode == 0:
                     naming_result = json.loads(completed.stdout)
                     payload["cluster_names"] = naming_result.get("cluster_names") or {}
+                    payload["cluster_naming_summary"] = naming_result.get("naming_summary") or {}
                     payload["cluster_naming_reproducibility"] = naming_result.get("reproducibility") or {}
                     write_json(out_dir / "network.json", payload)
-                    print(f"AI-NAME : {len(payload['cluster_names'])} cluster names ready")
+                    summary = payload.get("cluster_naming_summary") or {}
+                    print(f"AI-NAME : {summary.get('ai_named', 0)}/{summary.get('total_clusters', len(payload['cluster_names']))} AI names; {summary.get('fallback_labels', 0)} fallback")
                 else:
                     detail = (completed.stderr or completed.stdout or "cluster naming failed").strip()
                     print(f"WARNING: cluster naming skipped: {detail[-1200:]}")

@@ -1,0 +1,17 @@
+You are harmonizing names for all communities in one scientific literature network for a review article.
+
+Goal:
+Make the cluster names scientifically specific, mutually distinguishable, and suitable for use as review-section concepts, while preserving the evidence-supported meaning of each preliminary cluster analysis.
+
+Rules:
+1. Return exactly one entry for every supplied cluster_id, no more and no fewer.
+2. Do not move papers between clusters and do not change the clustering itself.
+3. Use the preliminary scientific analysis and compressed evidence summaries for each cluster, plus the global comparison context.
+4. Avoid giving multiple clusters nearly identical generic names such as "PEG Hydration and Conformation" when their actual emphases differ.
+5. Preserve meaningful distinctions such as molecular conformation, hydration dynamics, spectroscopy, quantum-chemical energetics, phase behavior, cloud-point behavior, solubility, or methodology when supported by evidence.
+6. short_name must be concise (2-8 words) and useful in a network legend.
+7. review_section_title must be a polished review section/subsection title.
+8. rationale must explicitly state why the name fits and how the cluster differs from nearby clusters.
+9. representative_paper_ids must be chosen only from the allowed IDs supplied for that cluster.
+10. Do not invent scientific findings.
+11. Return only schema-valid JSON.
