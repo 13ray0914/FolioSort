@@ -25,7 +25,45 @@ from lib.pipeline_common import (
 )
 
 STAGE = "grobid_parse"
-PARSER_VERSION = "grobid-v4.0"
+PARSER_VERSION = "grobid-v4.1-image-only-diagnostic"
+
+
+def image_only_pdf_diagnostic(pdf_path: Path, *, sample_pages: int = 5) -> str | None:
+    """Detect scans that GROBID cannot parse and return an actionable message."""
+    try:
+        try:
+            import pymupdf
+        except ImportError:  # PyMuPDF < 1.24 compatibility
+            import fitz as pymupdf  # type: ignore
+    except Exception:
+        return None
+    try:
+        document = pymupdf.open(pdf_path)
+        checked = min(max(1, int(sample_pages)), document.page_count)
+        if checked <= 0:
+            return "PDF_INVALID: the document has no pages."
+        text_chars = 0
+        image_pages = 0
+        for page_index in range(checked):
+            page = document[page_index]
+            text_chars += len((page.get_text() or "").strip())
+            image_pages += int(bool(page.get_images(full=True)))
+        if text_chars == 0 and image_pages == checked:
+            encryption = str((document.metadata or {}).get("encryption") or "")
+            suffix = f" PDF metadata reports {encryption}." if encryption else ""
+            return (
+                f"OCR_REQUIRED: sampled {checked} page(s); every page is an image and the PDF has no text layer."
+                f" Run OCR (for example OCRmyPDF with Japanese+English as appropriate) and retry GROBID.{suffix}"
+            )
+    except Exception:
+        # A diagnostic failure must not replace GROBID's own parser result.
+        return None
+    finally:
+        try:
+            document.close()
+        except Exception:
+            pass
+    return None
 
 
 def main() -> None:
@@ -71,6 +109,13 @@ def main() -> None:
         print(f"GROBID  {paper_id}  {row['original_filename']}")
         set_stage(conn, paper_id, STAGE, "running", input_hash=input_hash)
         try:
+            if bool(grobid.get("detect_image_only_pdfs", True)):
+                diagnostic = image_only_pdf_diagnostic(
+                    pdf_path,
+                    sample_pages=int(grobid.get("image_only_sample_pages", 5)),
+                )
+                if diagnostic:
+                    raise RuntimeError(diagnostic)
             data = [
                 ("generateIDs", "1"),
                 ("segmentSentences", "1"),

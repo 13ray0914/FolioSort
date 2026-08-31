@@ -14,6 +14,7 @@ from lib.pipeline_common import (
     connect_db,
     get_paths,
     load_config,
+    normalize_ws,
     parse_ids,
     read_json,
     select_papers,
@@ -37,7 +38,7 @@ from lib.v4_common import (
 )
 
 STAGE = "reference_resolution_v4"
-SCRIPT_VERSION = "reference-resolution-v4.0"
+SCRIPT_VERSION = "reference-resolution-v4.1-incremental"
 
 
 def canonical_for(paper_id: str, paper_path: Path, metadata_path: Path) -> dict[str, Any]:
@@ -67,6 +68,50 @@ def ref_query(reference: dict[str, Any]) -> dict[str, Any]:
         "doi": normalize_doi(reference.get("doi")),
         "raw_reference": reference.get("raw_reference"),
     }
+
+
+def reference_search_issue(query: dict[str, Any], cfg: dict[str, Any]) -> str | None:
+    """Return an actionable reason when a reference is unsafe for text search."""
+    title = normalize_ws(query.get("title") or "")
+    raw = normalize_ws(query.get("raw_reference") or "")
+    text = title or raw
+    if not text:
+        return "Reference has no searchable title or citation text; enter its DOI manually."
+    max_chars = int(cfg.get("external_query_max_chars", 350))
+    if len(text) > max_chars:
+        return (
+            f"Reference text is {len(text)} characters (limit {max_chars}) and looks like OCR/body text; "
+            "external title search was skipped. Enter the DOI manually."
+        )
+    return None
+
+
+def previous_reference_records(conn: Any, paper_id: str) -> dict[str, dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT ref_id,record_json FROM reference_matches_v4 WHERE citing_paper_id=?",
+        (paper_id,),
+    ).fetchall()
+    records: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        try:
+            payload = json.loads(row["record_json"] or "{}")
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            records[str(row["ref_id"])] = payload
+    return records
+
+
+def apply_local_metadata(resolved: dict[str, Any], local: dict[str, Any]) -> None:
+    resolved.update(
+        {
+            "title": local.get("title") or resolved.get("title"),
+            "doi": local.get("doi") or resolved.get("doi"),
+            "year": local.get("year") or resolved.get("year"),
+            "journal": local.get("journal") or resolved.get("journal"),
+            "openalex_id": local.get("openalex_id") or resolved.get("openalex_id"),
+        }
+    )
 
 
 def best_local_match(
@@ -156,7 +201,18 @@ def main() -> None:
         if not paper_path.exists():
             print(f"WAIT    {paper_id}: paper JSON missing")
             continue
-        input_hash = sha256_text(sha256_file(paper_path) + (sha256_file(metadata_path) if metadata_path.exists() else "") + signature)
+        override_rows = conn.execute(
+            "SELECT ref_id,doi,updated_at FROM reference_doi_overrides_v4 WHERE citing_paper_id=? ORDER BY ref_id",
+            (paper_id,),
+        ).fetchall()
+        overrides = {str(item["ref_id"]): normalize_doi(item["doi"]) for item in override_rows}
+        override_hash = stable_json_hash([dict(item) for item in override_rows])
+        input_hash = sha256_text(
+            sha256_file(paper_path)
+            + (sha256_file(metadata_path) if metadata_path.exists() else "")
+            + signature
+            + override_hash
+        )
         if not args.force and stage_is_current(conn, paper_id, STAGE, input_hash, out_path):
             print(f"SKIP    {paper_id} references current")
             continue
@@ -169,9 +225,16 @@ def main() -> None:
         try:
             records: list[dict[str, Any]] = []
             external_queries = 0
+            reused_external = 0
+            provider_error_count = 0
             max_queries = int(cfg.get("max_external_queries_per_paper", 80))
-            for reference in paper.get("references", []):
+            previous_by_ref = previous_reference_records(conn, paper_id) if not args.force else {}
+            for ref_index, reference in enumerate(paper.get("references", []), start=1):
+                ref_id = str(reference.get("ref_id") or f"ref-{ref_index:04d}")
                 query = ref_query(reference)
+                manual_doi = overrides.get(ref_id)
+                if manual_doi:
+                    query["doi"] = manual_doi
                 target, local_score, method = best_local_match(
                     query,
                     local_metadata,
@@ -187,127 +250,177 @@ def main() -> None:
                     "openalex_id": None,
                 }
                 provider_scores: dict[str, Any] = {}
+                reused = False
 
                 if target:
-                    local = local_metadata[target]
-                    resolved.update(
-                        {
-                            "title": local.get("title") or resolved["title"],
-                            "doi": local.get("doi") or resolved["doi"],
-                            "year": local.get("year") or resolved["year"],
-                            "journal": local.get("journal") or resolved["journal"],
-                            "openalex_id": local.get("openalex_id"),
-                        }
-                    )
+                    apply_local_metadata(resolved, local_metadata[target])
+                    if manual_doi:
+                        method = "manual_doi_to_local"
+                elif manual_doi:
+                    # A human-entered DOI is authoritative for this reference and
+                    # intentionally bypasses fragile free-text provider searches.
+                    resolved["doi"] = manual_doi
+                    method = "manual_doi_override"
                 else:
+                    previous = previous_by_ref.get(ref_id)
+                    if previous:
+                        previous_resolved = dict(previous.get("resolved") or {})
+                        enriched_query = dict(query)
+                        for field in ("title", "doi", "year", "journal"):
+                            if previous_resolved.get(field):
+                                enriched_query[field] = previous_resolved[field]
+                        cached_target, cached_score, cached_method = best_local_match(
+                            enriched_query,
+                            local_metadata,
+                            citing_paper_id=paper_id,
+                            oa_referenced_ids=oa_referenced_ids,
+                            cfg=cfg,
+                        )
+                        resolved.update(previous_resolved)
+                        provider_scores = dict(previous.get("provider_scores") or {})
+                        reused = True
+                        reused_external += 1
+                        if cached_target:
+                            target = cached_target
+                            local_score = cached_score
+                            method = "cached_external_to_local" if previous_resolved else cached_method
+                            apply_local_metadata(resolved, local_metadata[target])
+                        else:
+                            method = previous.get("match_method")
+
+                if not target and not manual_doi and not reused:
+                    search_issue = reference_search_issue(query, cfg) if not query.get("doi") else None
+                    if search_issue:
+                        provider_scores["search"] = {
+                            "error": search_issue,
+                            "manual_doi_recommended": True,
+                        }
+                        provider_error_count += 1
+
                     # Crossref resolution. A singleton DOI lookup can be accepted
                     # without a title only when the returned DOI is exactly the one
                     # printed in the reference. Title-bearing references still get
                     # a sanity check to guard against malformed OCR DOI strings.
-                    if crossref and external_queries < max_queries:
-                        candidate = None
-                        score = None
-                        margin = 0.0
-                        direct = False
-                        if query.get("doi"):
-                            candidate = crossref.by_doi(query["doi"], force=args.force)
-                            direct = candidate is not None
-                            if candidate:
-                                score = metadata_match_score(query, candidate)
-                        if candidate is None:
-                            candidates = crossref.search(
-                                query,
-                                rows=int(cfg.get("crossref_rows", 5)),
-                                force=args.force,
+                    if crossref and external_queries < max_queries and not search_issue:
+                        try:
+                            candidate = None
+                            score = None
+                            margin = 0.0
+                            direct = False
+                            if query.get("doi"):
+                                candidate = crossref.by_doi(query["doi"], force=args.force)
+                                direct = candidate is not None
+                                if candidate:
+                                    score = metadata_match_score(query, candidate)
+                            if candidate is None:
+                                candidates = crossref.search(
+                                    query,
+                                    rows=int(cfg.get("crossref_rows", 5)),
+                                    force=args.force,
+                                )
+                                external_queries += 1
+                                candidate, score, margin = choose_best_candidate(query, candidates)
+                            provider_scores["crossref"] = {
+                                "score": score,
+                                "margin": margin,
+                                "direct_doi": direct,
+                            }
+                            exact_doi = bool(
+                                direct
+                                and normalize_doi(candidate.get("doi") if candidate else "")
+                                == normalize_doi(query.get("doi"))
                             )
-                            external_queries += 1
-                            candidate, score, margin = choose_best_candidate(query, candidates)
-                        provider_scores["crossref"] = {
-                            "score": score,
-                            "margin": margin,
-                            "direct_doi": direct,
-                        }
-                        exact_doi = bool(
-                            direct
-                            and normalize_doi(candidate.get("doi") if candidate else "")
-                            == normalize_doi(query.get("doi"))
-                        )
-                        direct_ok = exact_doi and (
-                            not query.get("title")
-                            or (score or {}).get("title", 0.0)
-                            >= float(cfg.get("direct_doi_min_title_similarity", 0.55))
-                        )
-                        search_ok = bool(
-                            candidate
-                            and score
-                            and score["title"] >= float(cfg.get("external_min_title_similarity", 0.84))
-                            and score["overall"] >= float(cfg.get("external_accept_threshold", 0.86))
-                        )
-                        if candidate and score and (direct_ok or search_ok):
-                            resolved.update(
-                                {
-                                    "title": candidate.get("title") or resolved["title"],
-                                    "doi": candidate.get("doi") or resolved["doi"],
-                                    "year": candidate.get("year") or resolved["year"],
-                                    "journal": candidate.get("journal") or resolved["journal"],
-                                }
+                            direct_ok = exact_doi and (
+                                not query.get("title")
+                                or (score or {}).get("title", 0.0)
+                                >= float(cfg.get("direct_doi_min_title_similarity", 0.55))
                             )
-                            method = "crossref_doi" if direct_ok else "crossref_resolved"
+                            search_ok = bool(
+                                candidate
+                                and score
+                                and score["title"] >= float(cfg.get("external_min_title_similarity", 0.84))
+                                and score["overall"] >= float(cfg.get("external_accept_threshold", 0.86))
+                            )
+                            if candidate and score and (direct_ok or search_ok):
+                                resolved.update(
+                                    {
+                                        "title": candidate.get("title") or resolved["title"],
+                                        "doi": candidate.get("doi") or resolved["doi"],
+                                        "year": candidate.get("year") or resolved["year"],
+                                        "journal": candidate.get("journal") or resolved["journal"],
+                                    }
+                                )
+                                method = "crossref_doi" if direct_ok else "crossref_resolved"
+                        except Exception as error:
+                            provider_scores["crossref"] = {"error": str(error), "retryable": True}
+                            provider_error_count += 1
 
-                    # OpenAlex both confirms DOI-resolved records and independently
-                    # searches unresolved references. This is useful when a record
-                    # is absent or incomplete in Crossref but present in OpenAlex.
-                    if openalex:
-                        oa_candidate = None
-                        oa_score = None
-                        oa_margin = 0.0
-                        oa_direct = False
-                        if resolved.get("doi"):
-                            oa_candidate = openalex.by_doi(resolved["doi"], force=args.force)
-                            oa_direct = oa_candidate is not None
-                            if oa_candidate:
-                                oa_score = metadata_match_score(query, oa_candidate)
-                        if oa_candidate is None and external_queries < max_queries:
-                            oa_candidates = openalex.search(query, force=args.force)
-                            external_queries += 1
-                            oa_candidate, oa_score, oa_margin = choose_best_candidate(query, oa_candidates)
-                        provider_scores["openalex"] = {
-                            "score": oa_score,
-                            "margin": oa_margin,
-                            "direct_doi": oa_direct,
-                        }
-                        oa_exact_doi = bool(
-                            oa_direct
-                            and normalize_doi(oa_candidate.get("doi") if oa_candidate else "")
-                            == normalize_doi(resolved.get("doi") or query.get("doi"))
+                    # OpenAlex is used when Crossref did not resolve the citation.
+                    # Confirmation of an already resolved DOI is optional because it
+                    # doubles network traffic without changing ordinary graph edges.
+                    should_query_openalex = bool(
+                        openalex
+                        and not search_issue
+                        and (
+                            not (method or "").startswith("crossref")
+                            or bool(cfg.get("confirm_resolved_with_openalex", False))
                         )
-                        oa_direct_ok = oa_exact_doi and (
-                            not query.get("title")
-                            or (oa_score or {}).get("title", 0.0)
-                            >= float(cfg.get("direct_doi_min_title_similarity", 0.55))
-                        )
-                        oa_search_ok = bool(
-                            oa_candidate
-                            and oa_score
-                            and oa_score["title"] >= float(cfg.get("external_min_title_similarity", 0.84))
-                            and oa_score["overall"] >= float(cfg.get("external_accept_threshold", 0.86))
-                        )
-                        if oa_candidate and oa_score and (oa_direct_ok or oa_search_ok):
-                            resolved.update(
-                                {
-                                    "title": oa_candidate.get("title") or resolved["title"],
-                                    "doi": oa_candidate.get("doi") or resolved["doi"],
-                                    "year": oa_candidate.get("year") or resolved["year"],
-                                    "journal": oa_candidate.get("journal") or resolved["journal"],
-                                    "openalex_id": oa_candidate.get("openalex_id"),
-                                }
+                    )
+                    if should_query_openalex:
+                        try:
+                            oa_candidate = None
+                            oa_score = None
+                            oa_margin = 0.0
+                            oa_direct = False
+                            if resolved.get("doi"):
+                                oa_candidate = openalex.by_doi(resolved["doi"], force=args.force)
+                                oa_direct = oa_candidate is not None
+                                if oa_candidate:
+                                    oa_score = metadata_match_score(query, oa_candidate)
+                            if oa_candidate is None and external_queries < max_queries:
+                                oa_candidates = openalex.search(query, force=args.force)
+                                external_queries += 1
+                                oa_candidate, oa_score, oa_margin = choose_best_candidate(query, oa_candidates)
+                            provider_scores["openalex"] = {
+                                "score": oa_score,
+                                "margin": oa_margin,
+                                "direct_doi": oa_direct,
+                            }
+                            oa_exact_doi = bool(
+                                oa_direct
+                                and normalize_doi(oa_candidate.get("doi") if oa_candidate else "")
+                                == normalize_doi(resolved.get("doi") or query.get("doi"))
                             )
-                            if method and method.startswith("crossref"):
-                                method += "+openalex_confirmed"
-                            elif oa_direct_ok:
-                                method = "openalex_doi"
-                            else:
-                                method = "openalex_resolved"
+                            oa_direct_ok = oa_exact_doi and (
+                                not query.get("title")
+                                or (oa_score or {}).get("title", 0.0)
+                                >= float(cfg.get("direct_doi_min_title_similarity", 0.55))
+                            )
+                            oa_search_ok = bool(
+                                oa_candidate
+                                and oa_score
+                                and oa_score["title"] >= float(cfg.get("external_min_title_similarity", 0.84))
+                                and oa_score["overall"] >= float(cfg.get("external_accept_threshold", 0.86))
+                            )
+                            if oa_candidate and oa_score and (oa_direct_ok or oa_search_ok):
+                                resolved.update(
+                                    {
+                                        "title": oa_candidate.get("title") or resolved["title"],
+                                        "doi": oa_candidate.get("doi") or resolved["doi"],
+                                        "year": oa_candidate.get("year") or resolved["year"],
+                                        "journal": oa_candidate.get("journal") or resolved["journal"],
+                                        "openalex_id": oa_candidate.get("openalex_id"),
+                                    }
+                                )
+                                if method and method.startswith("crossref"):
+                                    method += "+openalex_confirmed"
+                                elif oa_direct_ok:
+                                    method = "openalex_doi"
+                                else:
+                                    method = "openalex_resolved"
+                        except Exception as error:
+                            provider_scores["openalex"] = {"error": str(error), "retryable": True}
+                            provider_error_count += 1
 
                 if not target and resolved.get("doi"):
                     doi_targets = [
@@ -329,7 +442,7 @@ def main() -> None:
                 status = "matched_local" if target else "resolved_external" if resolved.get("doi") or resolved.get("openalex_id") else "unresolved"
                 record = {
                     "citing_paper_id": paper_id,
-                    "ref_id": reference.get("ref_id"),
+                    "ref_id": ref_id,
                     "original": reference,
                     "query": query,
                     "target_paper_id": target,
@@ -338,6 +451,8 @@ def main() -> None:
                     "provider_scores": provider_scores,
                     "resolved": resolved,
                     "status": status,
+                    "manual_doi_override": manual_doi,
+                    "reused_external_resolution": reused,
                 }
                 records.append(record)
                 conn.execute(
@@ -362,7 +477,7 @@ def main() -> None:
                     """,
                     (
                         paper_id,
-                        reference.get("ref_id"),
+                        ref_id,
                         target,
                         method,
                         (local_score or {}).get("adjusted") or (local_score or {}).get("overall"),
@@ -376,6 +491,11 @@ def main() -> None:
                         now_iso(),
                     ),
                 )
+                if ref_index % 10 == 0:
+                    print(
+                        f"        {paper_id}: {ref_index}/{len(paper.get('references', []))} references "
+                        f"(new external={external_queries}, reused={reused_external}, provider errors={provider_error_count})"
+                    )
             conn.commit()
 
             # Add direct OpenAlex citation edges between local papers when the
@@ -407,11 +527,18 @@ def main() -> None:
                     "unresolved": sum(x["status"] == "unresolved" for x in records),
                     "openalex_only_local_edges": len(oa_only_edges),
                     "external_queries": external_queries,
+                    "reused_external_resolutions": reused_external,
+                    "provider_errors": provider_error_count,
+                    "manual_doi_overrides": sum(bool(x.get("manual_doi_override")) for x in records),
                 },
                 "provenance": {"script_version": SCRIPT_VERSION, "local_index_hash": local_index_hash},
             }
             write_json(out_path, payload)
             set_stage(conn, paper_id, STAGE, "success", input_hash, out_path, meta=payload["summary"])
+            print(
+                f"DONE    {paper_id}: new external={external_queries}, reused={reused_external}, "
+                f"provider errors={provider_error_count}"
+            )
         except Exception as error:
             conn.rollback()
             set_stage(conn, paper_id, STAGE, "error", input_hash=input_hash, error=str(error))

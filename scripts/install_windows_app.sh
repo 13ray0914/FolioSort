@@ -18,9 +18,12 @@ EOF
 
 WIN_VBS=$(wslpath -w "$VBS")
 WIN_ROOT=$(wslpath -w "$ROOT")
+ICON="$ROOT/assets/foliosort.ico"
+[[ -f "$ICON" ]] || { echo "ERROR: FolioSort icon is missing: $ICON"; exit 2; }
+WIN_ICON=$(wslpath -w "$ICON")
 PS1="$WIN_DIR/create_foliosort_shortcut.ps1"
 cat > "$PS1" <<'PS'
-param([string]$Launcher,[string]$WorkingDir)
+param([string]$Launcher,[string]$WorkingDir,[string]$Icon)
 $desktop = [Environment]::GetFolderPath('Desktop')
 $oldShortcutPath = Join-Path $desktop 'Review Literature App.lnk'
 if (Test-Path $oldShortcutPath) { Remove-Item $oldShortcutPath -Force -ErrorAction SilentlyContinue }
@@ -30,13 +33,13 @@ $s = $ws.CreateShortcut($shortcutPath)
 $s.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
 $s.Arguments = '"' + $Launcher + '"'
 $s.WorkingDirectory = $WorkingDir
-$s.IconLocation = (Join-Path $env:SystemRoot 'System32\shell32.dll') + ',220'
+$s.IconLocation = $Icon + ',0'
 $s.Description = 'FolioSort local literature workspace'
 $s.Save()
 Write-Host "Created: $shortcutPath"
 PS
 WIN_PS1=$(wslpath -w "$PS1")
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$WIN_PS1" -Launcher "$WIN_VBS" -WorkingDir "$WIN_ROOT"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$WIN_PS1" -Launcher "$WIN_VBS" -WorkingDir "$WIN_ROOT" -Icon "$WIN_ICON"
 
 echo
 echo "Windows launcher installed."

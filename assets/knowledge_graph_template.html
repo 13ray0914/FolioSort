@@ -14,11 +14,12 @@
     body.sideHidden #side{transform:translateX(100%)}
     #panelToggle{position:absolute;z-index:30;top:12px;right:calc(var(--side-width) + 12px);width:auto;margin:0;padding:8px 11px;box-shadow:0 2px 12px #0008;transition:right .18s ease}
     body.sideHidden #panelToggle{right:12px}
-    h2{margin:0 0 8px;font-size:18px}.muted{color:#9ca3af;font-size:12px}.section{border-top:1px solid #333;margin-top:14px;padding-top:13px}
+    h2{margin:0 0 8px;font-size:18px}.muted{color:#9ca3af;font-size:12px}.section{border-top:1px solid #333;margin-top:10px}
+    details.section>summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 2px;list-style:none;font-size:13px;font-weight:700;user-select:none}details.section>summary::-webkit-details-marker{display:none}details.section>summary::after{content:'+';color:#a1a1aa;font-size:17px;font-weight:400}details.section[open]>summary::after{content:'−'}.sectionBody{padding:0 0 12px}.sectionTools{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}.sectionTools button{font-size:11px;padding:6px}
     .check{display:flex;align-items:center;gap:7px;margin:5px 0;font-size:12px}.check input{width:auto}
     button,select,input{width:100%;box-sizing:border-box;background:#26262a;color:#eee;border:1px solid #424248;border-radius:7px;padding:8px;margin:4px 0}
     button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #a78bfa;outline-offset:1px}
-    .row{display:flex;gap:7px}.row button{width:50%}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+    .row{display:flex;gap:7px}.row button{width:50%}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.row4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px}.row4 button{font-size:11px;padding:7px 4px}
     .badge{display:inline-block;border-radius:12px;padding:3px 7px;margin:2px;background:#2b2b31;font-size:11px}.detail{font-size:12px;line-height:1.5;word-break:break-word}
     .status{padding:8px;border-radius:7px;background:#222228;margin-top:8px}.accent{color:#c4b5fd}.slider{display:grid;grid-template-columns:1fr 64px;gap:8px;align-items:center}.slider input[type=range]{padding:0}.full{grid-column:1/-1}.tip{font-size:12px;line-height:1.45;margin:6px 0}.historyDisabled{opacity:.45}.primaryText{margin:8px 0;padding:8px;border-radius:7px;background:#222228;font-size:13px;line-height:1.45}
     @media(max-width:760px){:root{--side-width:min(88vw,410px)}#panelToggle{top:8px}}
@@ -32,33 +33,21 @@
     <div class="muted"><b>Project:</b> __PROJECT_LABEL__</div>
     <div class="muted">Starts with papers only. Expand local neighborhoods, then use Back to undo each expansion.</div>
     <div id="status" class="status muted">Loading…</div>
-    <div class="section">
-      <label for="performanceMode">Performance</label>
-      <select id="performanceMode">
-        <option value="fast">Fast — small batches, fewer labels</option>
-        <option value="balanced">Balanced — recommended</option>
-        <option value="full">Full — largest batches</option>
-      </select>
-      <div class="muted">Changes display cost only. The exported scientific data remains complete.</div>
-    </div>
-    <div class="section">
-      <label for="findQuery">Find any node</label>
-      <input id="findQuery" placeholder="P0005, water solubility, claim…">
-      <button id="findBtn">Find / focus</button>
-      <div class="row3"><button id="backBtn">← Back</button><button id="forwardBtn">Forward →</button><button id="fit">Fit</button></div>
-      <div class="row"><button id="physics">Physics: on</button><button id="collapse">Papers only</button></div>
-    </div>
-    <div class="section">
-      <b>Appearance</b>
-      <div class="slider"><label for="paperFont">Paper label size</label><output id="paperFontOut"></output><input id="paperFont" type="range" min="10" max="30" step="1" class="full"><span></span></div>
-      <div class="slider"><label for="paperNode">Paper circle size</label><output id="paperNodeOut"></output><input id="paperNode" type="range" min="12" max="48" step="1"><span></span></div>
-      <div class="slider"><label for="otherFont">Other label size</label><output id="otherFontOut"></output><input id="otherFont" type="range" min="8" max="24" step="1"><span></span></div>
-      <button id="appearanceReset">Reset appearance</button>
-    </div>
-    <div class="section"><b>Node types</b><div id="types"></div></div>
-    <div class="section"><b>Relations</b><div id="relations"></div></div>
-    <div class="section"><b>Selected</b><div id="detail" class="muted">Click a node. Use “Expand 1-hop” to reveal its local neighborhood.</div></div>
-    <details class="section"><summary><b>How to read this graph</b></summary><div class="tip">Paper → claim shows what the study asserts. Paper → property/method/system shows what was studied and how. Claim-to-claim edges are model-inferred hypotheses and must be checked against evidence before use in a review.</div></details>
+    <div class="sectionTools"><button id="openSections">Open all functions</button><button id="closeSections">Hide all functions</button></div>
+    <details class="section" data-panel-section="performance" open><summary>Performance</summary><div class="sectionBody">
+      <label for="performanceMode">Rendering profile</label><select id="performanceMode"><option value="fast">Fast — small batches, fewer labels</option><option value="balanced">Balanced — recommended</option><option value="full">Full — largest batches</option></select><div class="muted">Changes display cost only. The exported scientific data remains complete.</div>
+    </div></details>
+    <details class="section" data-panel-section="explore" open><summary>Find and navigate</summary><div class="sectionBody">
+      <label for="findQuery">Find any node</label><input id="findQuery" placeholder="P0005, water solubility, claim…"><button id="findBtn">Find / focus</button>
+      <div class="row4"><button id="backBtn">← Back</button><button id="forwardBtn">Forward →</button><button id="fit">Fit</button><button id="spread">Spread papers</button></div><div class="row"><button id="physics">Physics: off</button><button id="collapse">Papers only</button></div>
+    </div></details>
+    <details class="section" data-panel-section="appearance"><summary>Appearance</summary><div class="sectionBody">
+      <div class="slider"><label for="paperFont">Paper label size</label><output id="paperFontOut"></output><input id="paperFont" type="range" min="10" max="30" step="1" class="full"><span></span></div><div class="slider"><label for="paperNode">Paper circle size</label><output id="paperNodeOut"></output><input id="paperNode" type="range" min="12" max="48" step="1"><span></span></div><div class="slider"><label for="otherFont">Other label size</label><output id="otherFontOut"></output><input id="otherFont" type="range" min="8" max="24" step="1"><span></span></div><button id="appearanceReset">Reset appearance</button>
+    </div></details>
+    <details class="section" data-panel-section="types"><summary>Node types</summary><div id="types" class="sectionBody"></div></details>
+    <details class="section" data-panel-section="relations"><summary>Relations</summary><div id="relations" class="sectionBody"></div></details>
+    <details class="section" data-panel-section="selected" open><summary>Selected node</summary><div class="sectionBody"><div id="detail" class="muted">Click a node. Use “Expand 1-hop” to reveal its local neighborhood.</div></div></details>
+    <details class="section" data-panel-section="help"><summary>How to read this graph</summary><div class="sectionBody tip">Paper → claim shows what the study asserts. Paper → property/method/system shows what was studied and how. Claim-to-claim edges are model-inferred hypotheses and must be checked against evidence before use in a review.</div></details>
   </aside>
   <script>
     const compactEdges=__EDGES__,meta=__META__,types=__TYPES__,relations=__RELATIONS__,NODE_STYLES=__NODE_STYLES__,EDGE_COLORS=__EDGE_COLORS__;
@@ -76,14 +65,15 @@
     let performanceMode=localStorage.getItem('kgPerformanceMode')||DEFAULT_PERFORMANCE_MODE;
     if(!performanceProfiles[performanceMode])performanceMode='balanced';
     let paperFontSize=Number(localStorage.getItem('kgPaperFont')||DEFAULT_PAPER_FONT),paperNodeSize=Number(localStorage.getItem('kgPaperNode')||DEFAULT_PAPER_NODE),otherFontSize=Number(localStorage.getItem('kgOtherFont')||DEFAULT_OTHER_FONT);
-    let selectedId=null,physics=true,backStack=[],forwardStack=[];
+    let selectedId=null,physics=false,backStack=[],forwardStack=[];
     const perf=()=>performanceProfiles[performanceMode];
     function styledNode(id){
       const base=meta[id];if(!base)return null;
       const style=NODE_STYLES[base.type]||NODE_STYLES.default;
       const rawValue=Number(base.node_size||8),isPaper=base.type==='paper';
       const label=perf().labels||isPaper?String(base.display_label||base.label||id):'';
-      return{id,label,title:esc(String(base.label||id).slice(0,900)),type:base.type,shape:style.shape,color:style.color,font:{color:'#e5e7eb',size:isPaper?paperFontSize:otherFontSize},value:isPaper?Math.max(rawValue,paperNodeSize):rawValue};
+      const position=isPaper&&paperPositions.has(id)?paperPositions.get(id):{};
+      return{id,label,title:esc(String(base.label||id).slice(0,900)),type:base.type,shape:style.shape,color:style.color,font:{color:'#e5e7eb',size:isPaper?paperFontSize:otherFontSize},value:isPaper?Math.max(rawValue,paperNodeSize):rawValue,...position};
     }
     function styledEdge(index){
       const edge=compactEdges[index],weight=Number(edge[E_WEIGHT]||1),relation=edge[E_RELATION];
@@ -95,13 +85,16 @@
       if(!adjacency.has(from))adjacency.set(from,[]);if(!adjacency.has(to))adjacency.set(to,[]);
       adjacency.get(from).push(index);adjacency.get(to).push(index);
     }
-    const initialNodeIds=allNodeIds.filter(id=>meta[id].type==='paper');
+    const initialNodeIds=allNodeIds.filter(id=>meta[id].type==='paper').sort((a,b)=>Number(meta[a].year||9999)-Number(meta[b].year||9999)||a.localeCompare(b));
+    const paperPositions=new Map();
+    function buildPaperGrid(){const count=initialNodeIds.length,columns=Math.max(1,Math.ceil(Math.sqrt(count*1.25))),rows=Math.max(1,Math.ceil(count/columns)),spacing=180;initialNodeIds.forEach((id,index)=>{const row=Math.floor(index/columns),column=index%columns,rowCount=Math.min(columns,count-row*columns),offset=(columns-rowCount)*spacing/2;paperPositions.set(id,{x:(column-(columns-1)/2)*spacing+offset+(row%2?spacing*.28:0),y:(row-(rows-1)/2)*spacing})})}
+    buildPaperGrid();
     let visibleNodeIds=new Set(initialNodeIds);
     const nodes=new vis.DataSet(initialNodeIds.map(styledNode)),edges=new vis.DataSet();
     const network=new vis.Network(document.getElementById('network'),{nodes,edges},{
       autoResize:true,layout:{improvedLayout:false,randomSeed:42},
       interaction:{hover:perf().hover,tooltipDelay:180,multiselect:true,hideEdgesOnDrag:true,hideEdgesOnZoom:true},
-      physics:{enabled:true,solver:'barnesHut',barnesHut:{gravitationalConstant:-5200,centralGravity:.08,springLength:120,springConstant:.035,damping:.32,avoidOverlap:0},adaptiveTimestep:true,stabilization:{enabled:true,iterations:perf().stabilization,fit:false}},
+      physics:{enabled:false,solver:'barnesHut',barnesHut:{gravitationalConstant:-7600,centralGravity:.035,springLength:175,springConstant:.025,damping:.38,avoidOverlap:.85},adaptiveTimestep:true,stabilization:{enabled:true,iterations:perf().stabilization,fit:false}},
       nodes:{scaling:{min:6,max:36}},edges:{smooth:{enabled:false}}
     });
     function makeChecks(containerId,items,dataName){
@@ -113,6 +106,8 @@
     function activeRelations(){return new Set([...document.querySelectorAll('[data-rel]')].filter(x=>x.checked).map(x=>x.dataset.rel))}
     function setStatus(message=''){const suffix=`${visibleNodeIds.size}/${allNodeIds.length} nodes · ${edges.length}/${compactEdges.length} visible edges · ${performanceMode}`;document.getElementById('status').innerHTML=(message?esc(message)+'<br>':'')+`<span class="accent">${suffix}</span>`}
     function setPhysics(on){physics=!!on;network.setOptions({physics:{enabled:physics}});document.getElementById('physics').textContent='Physics: '+(physics?'on':'off')}
+    function isPaperOnly(){return visibleNodeIds.size===initialNodeIds.length&&initialNodeIds.every(id=>visibleNodeIds.has(id))}
+    function layoutPapers(message='Papers spread evenly, including unconnected papers.'){const updates=initialNodeIds.filter(id=>visibleNodeIds.has(id)).map(id=>({id,...paperPositions.get(id)}));setPhysics(false);if(updates.length)nodes.update(updates);requestAnimationFrame(()=>network.fit({animation:{duration:260,easingFunction:'easeInOutQuad'}}));setStatus(message)}
     function refreshAppearance(){
       const updates=[];nodes.forEach(n=>{const styled=styledNode(n.id);if(styled)updates.push({id:n.id,label:styled.label,font:styled.font,value:styled.value})});if(updates.length)nodes.update(updates);
       document.getElementById('paperFontOut').textContent=paperFontSize;document.getElementById('paperNodeOut').textContent=paperNodeSize;document.getElementById('otherFontOut').textContent=otherFontSize;
@@ -165,7 +160,7 @@
     }
     function collapseToPapers(){
       const target=new Set(initialNodeIds);if(visibleNodeIds.size===target.size&&[...target].every(id=>visibleNodeIds.has(id)))return;
-      pushHistory();visibleNodeIds=target;nodes.clear();nodes.add(initialNodeIds.map(styledNode));selectedId=null;refreshNodeVisibility();rebuildEdges();settle('Collapsed to paper nodes.',true);
+      pushHistory();visibleNodeIds=target;nodes.clear();nodes.add(initialNodeIds.map(styledNode));selectedId=null;refreshNodeVisibility();rebuildEdges();layoutPapers('Collapsed to a spaced paper layout.');
     }
     function bestMatch(query){
       const q=query.trim().toLowerCase();if(!q)return null;
@@ -181,27 +176,29 @@
     async function openPaper(node){if(!node||node.type!=='paper'||!node.paper_id)return;try{const response=await fetch(`http://127.0.0.1:8766/api/open_pdf?id=${encodeURIComponent(node.paper_id)}`,{method:'POST'}),body=await response.json();if(!response.ok)throw new Error(body.error||response.statusText)}catch(error){alert('Could not open the original PDF. Start FolioSort first.\n\n'+error)}}
     async function openCuration(node){const paperId=node?.paper_id;if(!paperId){alert('This node is not linked to a single local paper. Expand a paper or claim node first.');return}try{const response=await fetch('http://127.0.0.1:8766/api/start_curation',{method:'POST'});if(!response.ok)throw new Error(await response.text());const entity=node.curation_uid?`&entity=${encodeURIComponent(node.curation_uid)}`:'';window.open(`http://127.0.0.1:8765/?paper=${encodeURIComponent(paperId)}${entity}`,'_blank')}catch(error){alert('Could not start the curation editor. Start FolioSort first.\n\n'+error)}}
     function show(id){
-      const node=meta[id];if(!node)return;selectedId=id;
+      const node=meta[id];if(!node)return;selectedId=id;const selectedSection=document.querySelector('[data-panel-section="selected"]');if(selectedSection)selectedSection.open=true;
       const open=node.type==='paper'?'<button id="openPdfBtn">Open original PDF</button><div class="muted">Double-click this paper node to open immediately.</div>':'',curate=node.paper_id?'<button id="curateBtn">Edit terms / proofread claims</button>':'',mainText=(node.type==='paper'||node.type==='claim')&&node.label?`<div class="primaryText">${esc(node.label)}</div>`:'';
       document.getElementById('detail').innerHTML=`<div class="detail"><b>${esc(node.display_label||node.label||node.id)}</b><br><span class="badge">${esc(node.type)}</span>${mainText}${Object.entries(node).filter(([key,value])=>!['id','label','type','display_label','node_size'].includes(key)&&value!==null&&value!==''&&JSON.stringify(value)!=='[]').map(([key,value])=>`<b>${esc(key)}</b>: ${esc(typeof value==='object'?JSON.stringify(value):value)}<br>`).join('')}<button id="expandSelectedBtn">Expand next ${perf().expand} neighbors</button>${open}${curate}</div>`;
       document.getElementById('expandSelectedBtn').onclick=()=>expandNode(id);const openButton=document.getElementById('openPdfBtn');if(openButton)openButton.onclick=()=>openPaper(node);const curateButton=document.getElementById('curateBtn');if(curateButton)curateButton.onclick=()=>openCuration(node);
     }
     function applyPerformanceMode(mode,persist=true){
       if(!performanceProfiles[mode])return;performanceMode=mode;if(persist)localStorage.setItem('kgPerformanceMode',mode);document.getElementById('performanceMode').value=mode;
-      network.setOptions({interaction:{hover:perf().hover,hideEdgesOnDrag:true,hideEdgesOnZoom:true},physics:{solver:'barnesHut',stabilization:{iterations:perf().stabilization,fit:false}},edges:{smooth:{enabled:false}}});
+      network.setOptions({interaction:{hover:perf().hover,hideEdgesOnDrag:true,hideEdgesOnZoom:true},physics:{solver:'barnesHut',barnesHut:{gravitationalConstant:-7600,centralGravity:.035,springLength:175,springConstant:.025,damping:.38,avoidOverlap:.85},stabilization:{iterations:perf().stabilization,fit:false}},edges:{smooth:{enabled:false}}});
       if(visibleNodeIds.size>perf().physicsThreshold)setPhysics(false);refreshAppearance();if(selectedId)show(selectedId);setStatus(`Performance mode: ${mode}.`);
     }
-    function setPanelHidden(hidden,persist=true){document.body.classList.toggle('sideHidden',hidden);const button=document.getElementById('panelToggle');button.textContent=hidden?'Show panel':'Hide panel';button.setAttribute('aria-expanded',String(!hidden));if(persist)localStorage.setItem('kgSideHidden',hidden?'1':'0');setTimeout(()=>network.redraw(),220)}
+    function setPanelHidden(hidden,persist=true){document.body.classList.toggle('sideHidden',hidden);const button=document.getElementById('panelToggle');button.textContent=hidden?'Show panel':'Hide panel';button.setAttribute('aria-expanded',String(!hidden));if(persist)localStorage.setItem('kgSideHidden',hidden?'1':'0');setTimeout(()=>{network.redraw();if(isPaperOnly())network.fit({animation:false})},220)}
+    function setupPanelSections(){const sections=[...document.querySelectorAll('[data-panel-section]')],storageKey='kgOpenPanelSections';let saved=null;try{const parsed=JSON.parse(localStorage.getItem(storageKey)||'null');if(Array.isArray(parsed))saved=new Set(parsed)}catch(_error){saved=null}if(saved)sections.forEach(section=>section.open=saved.has(section.dataset.panelSection));const persist=()=>localStorage.setItem(storageKey,JSON.stringify(sections.filter(section=>section.open).map(section=>section.dataset.panelSection)));sections.forEach(section=>section.addEventListener('toggle',persist));document.getElementById('openSections').onclick=()=>{sections.forEach(section=>section.open=true);persist()};document.getElementById('closeSections').onclick=()=>{sections.forEach(section=>section.open=false);persist()}}
+    setupPanelSections();
     document.getElementById('panelToggle').onclick=()=>setPanelHidden(!document.body.classList.contains('sideHidden'));
     document.getElementById('performanceMode').onchange=event=>applyPerformanceMode(event.target.value);
     [...document.querySelectorAll('[data-type],[data-rel]')].forEach(input=>input.onchange=()=>{refreshNodeVisibility();rebuildEdges()});
-    document.getElementById('fit').onclick=()=>network.fit({animation:true});document.getElementById('physics').onclick=()=>setPhysics(!physics);document.getElementById('collapse').onclick=collapseToPapers;document.getElementById('backBtn').onclick=goBack;document.getElementById('forwardBtn').onclick=goForward;document.getElementById('findBtn').onclick=focusQuery;document.getElementById('findQuery').addEventListener('keydown',event=>{if(event.key==='Enter')focusQuery()});
+    document.getElementById('fit').onclick=()=>network.fit({animation:true});document.getElementById('spread').onclick=()=>layoutPapers();document.getElementById('physics').onclick=()=>setPhysics(!physics);document.getElementById('collapse').onclick=collapseToPapers;document.getElementById('backBtn').onclick=goBack;document.getElementById('forwardBtn').onclick=goForward;document.getElementById('findBtn').onclick=focusQuery;document.getElementById('findQuery').addEventListener('keydown',event=>{if(event.key==='Enter')focusQuery()});
     const paperFont=document.getElementById('paperFont'),paperNode=document.getElementById('paperNode'),otherFont=document.getElementById('otherFont');paperFont.value=paperFontSize;paperNode.value=paperNodeSize;otherFont.value=otherFontSize;
     paperFont.oninput=()=>{paperFontSize=Number(paperFont.value);localStorage.setItem('kgPaperFont',paperFontSize);refreshAppearance()};paperNode.oninput=()=>{paperNodeSize=Number(paperNode.value);localStorage.setItem('kgPaperNode',paperNodeSize);refreshAppearance()};otherFont.oninput=()=>{otherFontSize=Number(otherFont.value);localStorage.setItem('kgOtherFont',otherFontSize);refreshAppearance()};
     document.getElementById('appearanceReset').onclick=()=>{paperFontSize=DEFAULT_PAPER_FONT;paperNodeSize=DEFAULT_PAPER_NODE;otherFontSize=DEFAULT_OTHER_FONT;localStorage.removeItem('kgPaperFont');localStorage.removeItem('kgPaperNode');localStorage.removeItem('kgOtherFont');paperFont.value=paperFontSize;paperNode.value=paperNodeSize;otherFont.value=otherFontSize;refreshAppearance()};
-    network.on('click',params=>{if(params.nodes.length)show(params.nodes[0])});network.on('doubleClick',params=>{if(!params.nodes.length)return;const node=meta[params.nodes[0]];if(node&&node.type==='paper')openPaper(node);else expandNode(params.nodes[0])});network.on('stabilizationProgress',progress=>setStatus(`Stabilizing ${Math.round(100*progress.iterations/progress.total)}%`));network.once('stabilizationIterationsDone',()=>{setPhysics(false);network.fit({animation:true});setStatus('Paper-only view ready.')});
+    network.on('click',params=>{if(params.nodes.length)show(params.nodes[0])});network.on('doubleClick',params=>{if(!params.nodes.length)return;const node=meta[params.nodes[0]];if(node&&node.type==='paper')openPaper(node);else expandNode(params.nodes[0])});network.on('stabilizationProgress',progress=>setStatus(`Stabilizing ${Math.round(100*progress.iterations/progress.total)}%`));
     window.addEventListener('keydown',event=>{const editing=event.target instanceof HTMLElement&&event.target.matches('input,select,textarea');if(!editing&&event.key.toLowerCase()==='p'){event.preventDefault();setPanelHidden(!document.body.classList.contains('sideHidden'))}else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();event.shiftKey?goForward():goBack()}else if(event.altKey&&event.key==='ArrowLeft'){event.preventDefault();goBack()}else if(event.altKey&&event.key==='ArrowRight'){event.preventDefault();goForward()}});
-    setPanelHidden(localStorage.getItem('kgSideHidden')==='1',false);applyPerformanceMode(performanceMode,false);refreshAppearance();refreshNodeVisibility();rebuildEdges();updateHistoryButtons();
+    setPanelHidden(localStorage.getItem('kgSideHidden')==='1',false);applyPerformanceMode(performanceMode,false);refreshAppearance();refreshNodeVisibility();rebuildEdges();updateHistoryButtons();setTimeout(()=>layoutPapers('Paper layout ready — unconnected papers are included.'),80);
   </script>
 </body>
 </html>

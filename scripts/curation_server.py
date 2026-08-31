@@ -350,7 +350,7 @@ APP: App | None = None
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "LiteratureCuration/4.2.0"
+    server_version = "LiteratureCuration/4.2.2"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         sys.stderr.write("CURATION %s - %s\n" % (self.address_string(), fmt % args))
@@ -402,7 +402,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         if parsed.path == "/health":
-            self.send_json({"ok": True, "version": "4.2.0-security-hardening"})
+            self.send_json({"ok": True, "version": "4.2.2-security-hardening"})
             return
         if parsed.path == "/api/papers":
             self.send_json({"papers": APP.paper_summaries()})

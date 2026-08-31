@@ -56,22 +56,72 @@ from lib.projects import (
     set_project_membership_batch,
 )
 from lib.web_security import browser_request_is_trusted, is_loopback_http_url, read_json_object
+from lib.v4_common import ensure_v4_schema, normalize_ws, valid_doi
 
-APP_VERSION = "4.2.0-security-hardened-network-workspace"
+APP_VERSION = "4.2.2-security-hardened-network-workspace"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FolioSort</title><style>
+<title>FolioSort</title><script>try{const saved=localStorage.getItem('foliosort-theme');document.documentElement.dataset.theme=saved||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark')}catch(_error){document.documentElement.dataset.theme='dark'}</script><style>
 :root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;background:#151515;color:#e8e8eb}*{box-sizing:border-box}body{margin:0;background:#151515}.wrap{max-width:1220px;margin:0 auto;padding:24px}h1{font-size:26px;margin:0 0 5px}h2{font-size:16px;margin:0 0 10px}.muted{color:#a1a1aa;font-size:12px;line-height:1.45}.grid{display:grid;grid-template-columns:1.08fr .92fr;gap:16px;margin-top:18px;align-items:start}.card{background:#1c1c1f;border:1px solid #33343a;border-radius:12px;padding:16px}.drop{border:2px dashed #555862;border-radius:12px;padding:28px 18px;text-align:center;background:#202024;transition:.15s}.drop.drag{border-color:#b6b7c3;background:#28282e}.drop b{display:block;font-size:18px;margin-bottom:7px}button,.btn,input,select{background:#2a2a30;color:#f4f4f5;border:1px solid #4a4a53;border-radius:8px;padding:10px 13px;font:inherit}button,.btn{cursor:pointer}button:hover,.btn:hover{border-color:#85858f}button:disabled,.btn:disabled{opacity:.42;cursor:not-allowed}.primary{background:#373741;font-weight:700;flex:1}.danger{background:#472525;border-color:#7d3838;font-weight:700;flex:0 0 160px}.projectrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar button{flex:1;min-width:150px}.pipelineActions{display:flex;gap:8px;margin-top:12px}.statusline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}.pill{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid #444752;color:#d4d4d8}.ok{color:#86efac;border-color:#365c43}.busy{color:#fde68a;border-color:#6b5a2c}.bad{color:#fca5a5;border-color:#713c3c}.files{margin-top:12px;max-height:250px;overflow:auto}.file{padding:8px 0;border-top:1px solid #303036;font-size:13px;word-break:break-all}.log{background:#111113;border:1px solid #303036;border-radius:8px;padding:10px;white-space:pre-wrap;overflow:auto;max-height:650px;min-height:480px;font:12px/1.45 Consolas,monospace}.hint{margin-top:8px;font-size:12px;color:#a1a1aa;line-height:1.45}.counts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.metric{background:#222226;border-radius:8px;padding:10px}.metric b{font-size:20px;display:block}.hidden{display:none}.projectName{font-size:13px;margin-top:8px}.divider{height:1px;background:#303036;margin:16px 0}.subhead{font-size:14px;font-weight:700;margin:0 0 10px}.results,.libraryCard{margin-top:16px}.libraryControls{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(150px,.7fr);gap:8px}.libraryActions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.libraryTarget{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;margin-top:8px;align-items:center}.libraryList{margin-top:10px;border:1px solid #303036;border-radius:8px;max-height:360px;overflow:auto;background:#18181b}.librow{display:grid;grid-template-columns:28px 58px 72px minmax(0,1fr);gap:8px;align-items:start;padding:9px 10px;border-top:1px solid #29292f;font-size:12px}.librow:first-child{border-top:0}.librow input{width:auto;margin:2px 0}.libtitle{font-weight:600;color:#e4e4e7;line-height:1.35}.libmeta{color:#9ca3af;font-size:11px;line-height:1.35;margin-top:2px}.member{color:#86efac}.notmember{color:#a1a1aa}.libsummary{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:8px}.libsummary .toolbar{margin:0}.smallbtn{padding:7px 9px;font-size:12px}.selection{color:#c4b5fd}@media(max-width:800px){.grid{grid-template-columns:1fr}.wrap{padding:14px}.counts{grid-template-columns:1fr 1fr}.projectrow{grid-template-columns:1fr 1fr}.projectrow select{grid-column:1/-1}.pipelineActions{flex-direction:column}.danger{flex:auto}.log{min-height:300px;max-height:430px}.libraryControls,.libraryActions,.libraryTarget{grid-template-columns:1fr}.librow{grid-template-columns:28px 58px 1fr}.librow .libyear{display:none}}
+/* Theme and dashboard layout overrides. */
+:root{--page:#151515;--surface:#1c1c1f;--surface2:#222226;--control:#2a2a30;--line:#33343a;--line2:#303036;--text:#e8e8eb;--muted:#a1a1aa;--accent:#c4b5fd;--drop:#202024;--log:#111113;--primary-bg:#4c3c78;--primary-border:#7662ad;--primary-text:#fff;--danger-bg:#692e2e;--danger-border:#a44a4a;--danger-text:#fff;color-scheme:dark;background:var(--page);color:var(--text)}
+:root[data-theme="light"]{--page:#f4f5f7;--surface:#fff;--surface2:#f0f1f4;--control:#fff;--line:#d5d8df;--line2:#e2e4e9;--text:#202124;--muted:#62666f;--accent:#64748b;--drop:#f8f8fa;--log:#f7f7f9;--primary-bg:#e6ebf2;--primary-border:#c7d0dd;--primary-text:#334155;--danger-bg:#c81e1e;--danger-border:#991b1b;--danger-text:#fff;color-scheme:light}
+body{background:var(--page);color:var(--text);transition:background .15s,color .15s}.card{background:var(--surface);border-color:var(--line)}.muted,.hint{color:var(--muted)}button,.btn,input,select{background:var(--control);color:var(--text);border-color:var(--line)}.primary{background:var(--primary-bg);border-color:var(--primary-border);color:var(--primary-text)}.danger{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger-text)}.primary:hover,.danger:hover{filter:brightness(1.08)}.drop{background:var(--drop);border-color:var(--line)}.drop.drag{background:var(--surface2)}.metric,.primaryText{background:var(--surface2)}.divider{background:var(--line2)}.libraryList{background:var(--surface);border-color:var(--line2)}.librow{border-color:var(--line2)}.libtitle{color:var(--text)}.log{background:var(--log);color:var(--text);border-color:var(--line2)}
+:root[data-theme="light"] .primary:hover{background:#dce4ee;border-color:#b9c5d4;filter:none}
+.topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}.topbar h1{margin-bottom:5px}.appMeta{display:flex;align-items:center;gap:8px;flex:none}.versionBadge{border:1px solid var(--line);border-radius:999px;padding:7px 10px;font-size:12px;color:var(--muted);white-space:nowrap}.themeToggle{width:auto;white-space:nowrap;padding:8px 11px}.homeGrid{display:grid;grid-template-columns:1fr 1.15fr .75fr;gap:16px;margin-top:18px;align-items:stretch}.homeGrid>.card{height:100%}.homeGrid .results{margin-top:0}.libraryCard,.pipelineCard{margin-top:16px}.pipelineCard .log{min-height:230px;max-height:420px}.results .toolbar{flex-direction:column}.results .toolbar button{width:100%;min-width:0}.projectCard .projectrow{grid-template-columns:1fr 1fr}.projectCard .projectrow select{grid-column:1/-1}.addCard .files{max-height:190px}
+.referenceCard{margin-top:16px}.referenceControls{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(190px,.8fr) auto;gap:8px;margin-top:10px}.referenceNote{width:100%;margin-top:8px}.referenceDetail{margin-top:9px;padding:10px;border:1px solid var(--line2);border-radius:8px;background:var(--surface2);font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto}.referenceDetail.bad{color:var(--text);border-color:#b45353}
+@media(max-width:1000px){.homeGrid{grid-template-columns:1fr 1fr}.results{grid-column:1/-1}.results .toolbar{flex-direction:row}.results .toolbar button{min-width:150px}.topbar{align-items:center}}@media(max-width:700px){.homeGrid{grid-template-columns:1fr}.results{grid-column:auto}.topbar{align-items:flex-start;flex-direction:column}.appMeta{width:100%}.themeToggle{margin-left:auto}.results .toolbar{flex-direction:column}.referenceControls{grid-template-columns:1fr}}
 </style></head><body><div class="wrap">
-<h1>FolioSort</h1><div class="muted">Local literature workspace for project-scoped PDF analysis, graph generation, curation, and original-PDF access. WSL runs in the background.</div>
-<div class="grid"><div>
-<div class="card"><h2>Project</h2><div class="projectrow"><select id="project"></select><button id="newProject">New project</button><button id="renameProject">Rename</button></div><div id="projectInfo" class="hint">Projects are views of one shared canonical PDF library. Adding/removing a paper from a project changes membership only; the original PDF and shared analysis remain untouched.</div><div class="counts"><div class="metric"><b id="active">-</b><span class="muted">active papers</span></div><div class="metric"><b id="memory">-</b><span class="muted">memories ready</span></div><div class="metric"><b id="networkState">-</b><span class="muted">network</span></div></div><div id="projectDisplay" class="projectName muted"></div><div class="divider"></div><div class="subhead">Add papers</div><div id="drop" class="drop" tabindex="0"><b>Drop PDF files here</b><span>or click to choose files</span><input id="pick" type="file" accept="application/pdf,.pdf" multiple class="hidden"></div><div id="uploadMsg" class="hint">New PDFs are ingested into the canonical library and assigned to the selected project. Exact byte-identical duplicates reuse the existing paper ID.</div><div id="files" class="files"></div><div class="pipelineActions"><button id="analyze" class="primary">Analyze / update selected project</button><button id="stopPipeline" class="danger" disabled>Stop pipeline</button></div><div class="statusline"><span id="pipePill" class="pill">Pipeline: checking</span><span id="svcPill" class="pill">FolioSort: ready</span></div></div>
-<div class="card libraryCard"><h2>Master PDF library</h2><div class="muted">Canonical parent list. Project membership can be changed without moving or deleting the source PDF, extracted text, summaries, embeddings, or curation.</div><div class="libraryControls" style="margin-top:10px"><input id="librarySearch" type="search" placeholder="Search paper ID, author, year, title, journal, DOI, filename…"><select id="libraryFilter"><option value="all">All canonical papers</option><option value="in">In current project</option><option value="out">Not in current project</option></select></div><div class="libsummary"><span id="librarySummary" class="muted">Loading library…</span><div class="toolbar"><button id="selectVisible" class="smallbtn">Select visible</button><button id="clearLibrarySelection" class="smallbtn">Clear selection</button></div></div><div id="libraryList" class="libraryList"></div><div class="libraryActions"><button id="addCurrent" class="primary">Add selected to current project</button><button id="removeCurrent">Remove selected from current project</button></div><div class="libraryTarget"><select id="targetProject"></select><button id="copyTarget">Copy to target</button><button id="moveTarget">Move to target</button></div><div id="libraryMsg" class="hint">Removing from a project never deletes the canonical PDF. “Move” means add membership to the target project and remove membership from the current project.</div></div>
-<div class="card results"><h2>Results</h2><div class="toolbar"><button id="network">Literature network</button><button id="knowledge">Knowledge graph</button><button id="curation">Curation editor</button></div><div class="hint">Results open only the selected project. After changing project membership, run Analyze/update on affected projects so their graphs reflect the new paper set.</div></div>
-</div><div><div class="card"><h2>Pipeline log</h2><div id="log" class="log">Waiting for status...</div></div></div></div></div>
+<div class="topbar">
+  <div><h1>FolioSort</h1><div class="muted">Local literature workspace for project-scoped PDF analysis, graph generation, curation, and original-PDF access. WSL runs in the background.</div></div>
+  <div class="appMeta"><span class="versionBadge">Version __APP_VERSION__</span><button id="themeToggle" class="themeToggle" type="button">Light mode</button></div>
+</div>
+<div class="homeGrid">
+  <div class="card projectCard">
+    <h2>Project</h2>
+    <div class="projectrow"><select id="project"></select><button id="newProject">New project</button><button id="renameProject">Rename</button></div>
+    <div id="projectInfo" class="hint">Projects are views of one shared canonical PDF library. Adding/removing a paper from a project changes membership only; the original PDF and shared analysis remain untouched.</div>
+    <div class="counts"><div class="metric"><b id="active">-</b><span class="muted">active papers</span></div><div class="metric"><b id="memory">-</b><span class="muted">memories ready</span></div><div class="metric"><b id="networkState">-</b><span class="muted">network</span></div></div>
+    <div id="projectDisplay" class="projectName muted"></div>
+  </div>
+  <div class="card addCard">
+    <h2>Add papers</h2>
+    <div id="drop" class="drop" tabindex="0"><b>Drop PDF files here</b><span>or click to choose files</span><input id="pick" type="file" accept="application/pdf,.pdf" multiple class="hidden"></div>
+    <div id="uploadMsg" class="hint">New PDFs are ingested into the canonical library and assigned to the selected project. Exact byte-identical duplicates reuse the existing paper ID.</div>
+    <div id="files" class="files"></div>
+    <div class="pipelineActions"><button id="analyze" class="primary">Analyze / update selected project</button><button id="stopPipeline" class="danger" disabled>Stop pipeline</button></div>
+    <div class="statusline"><span id="pipePill" class="pill">Pipeline: checking</span><span id="svcPill" class="pill">FolioSort: ready</span></div>
+  </div>
+  <div class="card results">
+    <h2>Results</h2>
+    <div class="toolbar"><button id="network">Literature network</button><button id="knowledge">Knowledge graph</button><button id="curation">Curation editor</button></div>
+    <div class="hint">Results open only the selected project. Analyze affected projects after changing membership.</div>
+  </div>
+</div>
+<div class="card libraryCard">
+  <h2>Master PDF library</h2><div class="muted">Canonical parent list. Project membership can be changed without moving or deleting the source PDF, extracted text, summaries, embeddings, or curation.</div>
+  <div class="libraryControls" style="margin-top:10px"><input id="librarySearch" type="search" placeholder="Search paper ID, author, year, title, journal, DOI, filename…"><select id="libraryFilter"><option value="all">All canonical papers</option><option value="in">In current project</option><option value="out">Not in current project</option></select></div>
+  <div class="libsummary"><span id="librarySummary" class="muted">Loading library…</span><div class="toolbar"><button id="selectVisible" class="smallbtn">Select visible</button><button id="clearLibrarySelection" class="smallbtn">Clear selection</button></div></div>
+  <div id="libraryList" class="libraryList"></div>
+  <div class="libraryActions"><button id="addCurrent" class="primary">Add selected to current project</button><button id="removeCurrent">Remove selected from current project</button></div>
+  <div class="libraryTarget"><select id="targetProject"></select><button id="copyTarget">Copy to target</button><button id="moveTarget">Move to target</button></div>
+  <div id="libraryMsg" class="hint">Removing from a project never deletes the canonical PDF. “Move” means add membership to the target project and remove membership from the current project.</div>
+</div>
+<div class="card referenceCard">
+  <h2>Manual reference DOI</h2>
+  <div class="muted">References rejected by Crossref/OpenAlex can be corrected here. Choose the failed citation—not the citing paper itself—and enter its DOI. The override is preserved and used on the next Analyze/update without free-text API search. OCR/body text mistakenly extracted as a reference is now skipped automatically; leave it without a DOI unless it is a real citation.</div>
+  <div class="referenceControls"><select id="referenceIssue"></select><input id="referenceDoi" placeholder="10.xxxx/suffix"><button id="saveReferenceDoi" class="primary">Save DOI override</button></div>
+  <input id="referenceNote" class="referenceNote" placeholder="Optional note or source for this correction">
+  <div id="referenceDetail" class="referenceDetail muted">Loading reference-resolution issues…</div>
+  <div id="referenceMsg" class="hint">After saving, run Analyze/update. Existing external results are reused, so only new or corrected references require external lookup.</div>
+</div>
+<div class="card pipelineCard"><h2>Pipeline log</h2><div id="log" class="log">Waiting for status...</div></div>
+</div>
 <script>
-const $=x=>document.getElementById(x),drop=$('drop'),pick=$('pick');let currentProject=localStorage.getItem('foliosort-project')||localStorage.getItem('review-project')||'default';let refreshing=false;let libraryPapers=[];let selectedLibraryPapers=new Set();let projectRows=[];
+const $=x=>document.getElementById(x),drop=$('drop'),pick=$('pick');let currentProject=localStorage.getItem('foliosort-project')||localStorage.getItem('review-project')||'default';let refreshing=false;let libraryPapers=[];let selectedLibraryPapers=new Set();let projectRows=[];let referenceIssues=[];
+function applyTheme(theme,persist=true){const next=theme==='light'?'light':'dark';document.documentElement.dataset.theme=next;$('themeToggle').textContent=next==='dark'?'Light mode':'Dark mode';$('themeToggle').setAttribute('aria-label',`Switch to ${next==='dark'?'light':'dark'} mode`);if(persist)localStorage.setItem('foliosort-theme',next)}
+$('themeToggle').onclick=()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');applyTheme(document.documentElement.dataset.theme,false);
 function saveProject(){localStorage.setItem('foliosort-project',currentProject)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function fmtBytes(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
 function yearNum(v){const y=parseInt(v,10);return Number.isFinite(y)&&y>0?y:9999}
@@ -82,18 +132,23 @@ drop.onclick=()=>pick.click();drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' '
 function populateTargetProjects(){const target=$('targetProject');target.innerHTML='<option value="">— target project —</option>'+projectRows.filter(p=>p.project_slug!==currentProject).map(p=>`<option value="${esc(p.project_slug)}">${esc(p.name)} (${p.active_papers})</option>`).join('')}
 function visibleLibraryRows(){const q=$('librarySearch').value.trim().toLowerCase(),filter=$('libraryFilter').value;return libraryPapers.filter(p=>{if(filter==='in'&&!p.in_current_project)return false;if(filter==='out'&&p.in_current_project)return false;if(!q)return true;const hay=[p.paper_id,p.authors,p.year,p.title,p.journal,p.doi,p.original_filename,(p.project_names||[]).join(' ')].join(' ').toLowerCase();return hay.includes(q)}).sort((a,b)=>yearNum(a.year)-yearNum(b.year)||(a.authors||'').localeCompare(b.authors||'')||(a.title||'').localeCompare(b.title||''))}
 function renderLibrary(){const rows=visibleLibraryRows();$('librarySummary').innerHTML=`${rows.length}/${libraryPapers.length} shown · <span class="selection">${selectedLibraryPapers.size} selected</span>`;$('libraryList').innerHTML=rows.map(p=>`<label class="librow"><input type="checkbox" data-paper="${esc(p.paper_id)}" ${selectedLibraryPapers.has(p.paper_id)?'checked':''}><span>${esc(p.paper_id)}</span><span class="libyear">${esc(p.year??'?')}</span><span><div class="libtitle">${esc(p.title||p.original_filename||'(untitled)')}</div><div class="libmeta">${esc(p.authors||'')} ${p.journal?`· ${esc(p.journal)}`:''}${p.doi?` · ${esc(p.doi)}`:''}<br><span class="${p.in_current_project?'member':'notmember'}">${p.in_current_project?'In current project':'Not in current project'}</span>${(p.project_names||[]).length?` · projects: ${esc(p.project_names.join(', '))}`:''}</div></span></label>`).join('')||'<div class="muted" style="padding:12px">No matching papers.</div>';$('libraryList').querySelectorAll('[data-paper]').forEach(cb=>cb.addEventListener('change',()=>{if(cb.checked)selectedLibraryPapers.add(cb.dataset.paper);else selectedLibraryPapers.delete(cb.dataset.paper);renderLibrary()}));populateTargetProjects()}
+function selectedReferenceIssue(){const i=parseInt($('referenceIssue').value,10);return Number.isFinite(i)?referenceIssues[i]:null}
+function renderReferenceIssues(){const select=$('referenceIssue');select.innerHTML=referenceIssues.map((item,index)=>{const label=(item.title||item.raw_reference||'(citation text unavailable)').slice(0,115);return `<option value="${index}">${esc(item.paper_id)} · ${esc(item.ref_id)} · ${esc(label)}</option>`}).join('')||'<option value="">No DOI corrections currently requested</option>';select.disabled=!referenceIssues.length;$('saveReferenceDoi').disabled=!referenceIssues.length;showReferenceIssue()}
+function showReferenceIssue(){const item=selectedReferenceIssue();if(!item){$('referenceDoi').value='';$('referenceDetail').textContent='No reference-level provider errors are currently available for manual correction.';$('referenceDetail').className='referenceDetail muted';return}$('referenceDoi').value=item.manual_doi||item.extracted_doi||'';const errors=Object.entries(item.provider_errors||{}).map(([name,value])=>`${name}: ${value}`).join('\n');$('referenceDetail').textContent=`${item.paper_id} / ${item.ref_id}\n${item.title||item.raw_reference||'(no citation text)'}${errors?`\n\n${errors}`:''}${item.stage_error?`\n\nPipeline error: ${item.stage_error}`:''}`;$('referenceDetail').className='referenceDetail bad'}
+async function refreshReferenceIssues(){try{const j=await jsonFetch(purl('/api/reference_issues'));referenceIssues=j.issues||[];renderReferenceIssues()}catch(e){$('referenceDetail').textContent='Could not load reference issues: '+e;$('referenceDetail').className='referenceDetail bad'}}
+$('referenceIssue').addEventListener('change',showReferenceIssue);$('saveReferenceDoi').onclick=async()=>{const item=selectedReferenceIssue();if(!item)return;const doi=$('referenceDoi').value.trim();if(!doi){$('referenceMsg').textContent='Enter a DOI such as 10.xxxx/suffix.';return}$('referenceMsg').textContent='Saving DOI override…';try{const j=await jsonFetch(purl('/api/reference_override'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paper_id:item.paper_id,ref_id:item.ref_id,doi,note:$('referenceNote').value})});$('referenceMsg').textContent=j.message;await refreshReferenceIssues()}catch(e){$('referenceMsg').textContent='Could not save DOI override: '+e}};
 async function refreshLibrary(){try{const j=await jsonFetch(purl('/api/library'));libraryPapers=j.papers||[];projectRows=j.projects||projectRows;const valid=new Set(libraryPapers.map(p=>p.paper_id));selectedLibraryPapers=new Set([...selectedLibraryPapers].filter(x=>valid.has(x)));renderLibrary()}catch(e){$('libraryMsg').textContent='Could not load Master PDF library: '+e}}
 async function membershipAction(action){const ids=[...selectedLibraryPapers];if(!ids.length){alert('Select at least one paper in the Master PDF library.');return}const target=(action==='copy_to'||action==='move_to')?$('targetProject').value:null;if((action==='copy_to'||action==='move_to')&&!target){alert('Choose a target project.');return}if(action==='remove_current'&&!confirm(`Remove ${ids.length} selected paper(s) from the current project? The canonical PDFs will NOT be deleted.`))return;if(action==='move_to'&&!confirm(`Move ${ids.length} selected paper membership(s) from the current project to the target project? Canonical PDFs will NOT be moved on disk.`))return;$('libraryMsg').textContent='Updating project membership…';try{const j=await jsonFetch(purl('/api/project_membership'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,paper_ids:ids,target_project:target})});$('libraryMsg').textContent=j.message;selectedLibraryPapers.clear();await refresh();await refreshLibrary()}catch(e){$('libraryMsg').textContent='Membership update failed: '+e}}
 $('librarySearch').addEventListener('input',renderLibrary);$('libraryFilter').addEventListener('change',renderLibrary);$('selectVisible').onclick=()=>{visibleLibraryRows().forEach(p=>selectedLibraryPapers.add(p.paper_id));renderLibrary()};$('clearLibrarySelection').onclick=()=>{selectedLibraryPapers.clear();renderLibrary()};$('addCurrent').onclick=()=>membershipAction('add_current');$('removeCurrent').onclick=()=>membershipAction('remove_current');$('copyTarget').onclick=()=>membershipAction('copy_to');$('moveTarget').onclick=()=>membershipAction('move_to');
-$('project').addEventListener('change',async()=>{currentProject=$('project').value;saveProject();selectedLibraryPapers.clear();await refresh();await refreshLibrary()});
+$('project').addEventListener('change',async()=>{currentProject=$('project').value;saveProject();selectedLibraryPapers.clear();await refresh();await refreshLibrary();await refreshReferenceIssues()});
 $('newProject').onclick=async()=>{const name=prompt('New project name');if(!name)return;try{const j=await jsonFetch('/api/create_project?name='+encodeURIComponent(name),{method:'POST'});currentProject=j.project_slug;saveProject();await refresh();await refreshLibrary();$('uploadMsg').textContent=`Project created: ${j.name}`}catch(e){alert(e)}};
 $('renameProject').onclick=async()=>{const selected=$('project').selectedOptions[0];const name=prompt('New display name for this project',selected?selected.textContent.replace(/\s*\(\d+\)\s*$/,''):'');if(!name)return;try{await jsonFetch('/api/rename_project?project='+encodeURIComponent(currentProject)+'&name='+encodeURIComponent(name),{method:'POST'});await refresh();await refreshLibrary()}catch(e){alert(e)}};
 $('analyze').onclick=async()=>{try{const j=await jsonFetch(purl('/api/analyze'),{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not start pipeline: '+e}};
 $('stopPipeline').onclick=async()=>{if(!confirm('Stop the running pipeline? Completed outputs will be kept.'))return;$('stopPipeline').disabled=true;$('uploadMsg').textContent='Stopping pipeline...';try{const j=await jsonFetch('/api/stop_pipeline',{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not stop pipeline: '+e;await refresh()}};
 $('network').onclick=()=>window.open(purl('/network'),'_blank');$('knowledge').onclick=()=>window.open(purl('/knowledge'),'_blank');$('curation').onclick=async()=>{try{await jsonFetch('/api/start_curation',{method:'POST'});window.open('http://127.0.0.1:8765/','_blank')}catch(e){alert(e)}};
 async function refresh(){if(refreshing)return;refreshing=true;try{const j=await jsonFetch(purl('/api/status'));const sel=$('project');projectRows=j.projects||[];if(!projectRows.some(p=>p.project_slug===currentProject)){currentProject=projectRows[0]?.project_slug||'default';saveProject()}sel.innerHTML=projectRows.map(p=>`<option value="${esc(p.project_slug)}" ${p.project_slug===currentProject?'selected':''}>${esc(p.name)} (${p.active_papers})</option>`).join('');populateTargetProjects();$('active').textContent=j.active_papers;$('memory').textContent=j.memory_count;$('networkState').textContent=j.network_stale?'stale':(j.network_ready?'ready':'not yet');$('projectDisplay').textContent=`${j.project_name} · ${currentProject}`;let runText=j.pipeline_running?'running':'idle';if(j.pipeline_running&&j.running_project_name)runText+=` · ${j.running_project_name}`;$('pipePill').textContent='Pipeline: '+runText;$('pipePill').className='pill '+(j.pipeline_running?'busy':'ok');$('stopPipeline').disabled=!j.pipeline_stoppable;$('stopPipeline').title=j.pipeline_running&&!j.pipeline_stoppable?'This pipeline was not started by FolioSort, so FolioSort will not kill an unknown terminal process.':'';$('files').innerHTML=(j.raw_pdfs||[]).slice(-30).reverse().map(f=>`<div class="file">${esc(f.name)} <span class="muted">${fmtBytes(f.size)}</span>${f.paper_id?` <span class="muted">(${esc(f.paper_id)})</span>`:''}</div>`).join('')||'<div class="muted">No PDFs in this project yet.</div>';$('log').textContent=j.log_tail||'No pipeline log yet.';const L=$('log');L.scrollTop=L.scrollHeight;$('svcPill').textContent='FolioSort: ready';$('svcPill').className='pill ok'}catch(e){$('svcPill').textContent='FolioSort: disconnected';$('svcPill').className='pill bad'}finally{refreshing=false}}
-(async()=>{await refresh();await refreshLibrary()})();setInterval(refresh,2500);setInterval(refreshLibrary,15000);
-</script></body></html>'''
+(async()=>{await refresh();await refreshLibrary();await refreshReferenceIssues()})();setInterval(refresh,2500);setInterval(refreshLibrary,15000);setInterval(refreshReferenceIssues,30000);
+</script></body></html>'''.replace("__APP_VERSION__", APP_VERSION.split("-", 1)[0])
 
 
 
@@ -114,6 +169,7 @@ class FolioSortApp:
         conn = connect_db(self.paths["database"])
         try:
             ensure_project_schema(conn)
+            ensure_v4_schema(conn)
         finally:
             conn.close()
 
@@ -342,6 +398,189 @@ class FolioSortApp:
             return result
         finally:
             conn.close()
+
+    @staticmethod
+    def _provider_error_search_text(error: str | None) -> str:
+        text = str(error or "")
+        marker = " for url: "
+        if marker not in text:
+            return ""
+        try:
+            parsed = urllib.parse.urlparse(text.rsplit(marker, 1)[1])
+            query = urllib.parse.parse_qs(parsed.query)
+            return normalize_ws(
+                (query.get("search") or query.get("query.bibliographic") or [""])[0]
+            )
+        except Exception:
+            return ""
+
+    def reference_issues(self, project_slug: str) -> list[dict[str, Any]]:
+        """Return reference-level failures that can be corrected with a DOI."""
+        normalize_project_slug(project_slug)
+        conn = self.db()
+        try:
+            ensure_v4_schema(conn)
+            # Reference resolution is canonical/shared across projects. Surface
+            # errors from the whole Master PDF Library even when the citing paper
+            # is not a member of the currently selected project.
+            paper_ids = [str(row[0]) for row in conn.execute(
+                "SELECT paper_id FROM papers WHERE active=1 ORDER BY paper_id"
+            ).fetchall()]
+            if not paper_ids:
+                return []
+            placeholders = ",".join("?" for _ in paper_ids)
+            stage_rows = conn.execute(
+                f"SELECT paper_id,error FROM stages WHERE stage='reference_resolution_v4' AND status='error' AND paper_id IN ({placeholders})",
+                paper_ids,
+            ).fetchall()
+            stage_errors = {str(row["paper_id"]): str(row["error"] or "") for row in stage_rows}
+            match_rows = conn.execute(
+                f"SELECT citing_paper_id,ref_id,status,record_json FROM reference_matches_v4 WHERE citing_paper_id IN ({placeholders})",
+                paper_ids,
+            ).fetchall()
+            match_records: dict[tuple[str, str], dict[str, Any]] = {}
+            for row in match_rows:
+                try:
+                    record = json.loads(row["record_json"] or "{}")
+                except Exception:
+                    record = {}
+                if isinstance(record, dict):
+                    match_records[(str(row["citing_paper_id"]), str(row["ref_id"]))] = record
+            override_rows = conn.execute(
+                f"SELECT citing_paper_id,ref_id,doi,updated_at FROM reference_doi_overrides_v4 WHERE citing_paper_id IN ({placeholders})",
+                paper_ids,
+            ).fetchall()
+            overrides = {
+                (str(row["citing_paper_id"]), str(row["ref_id"])): {
+                    "doi": str(row["doi"]),
+                    "updated_at": str(row["updated_at"]),
+                }
+                for row in override_rows
+            }
+        finally:
+            conn.close()
+
+        issues: list[dict[str, Any]] = []
+        for paper_id in paper_ids:
+            paper_path = self.paths["paper_json"] / f"{paper_id}.json"
+            if not paper_path.exists():
+                continue
+            try:
+                paper = json.loads(paper_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            stage_error = stage_errors.get(paper_id, "")
+            failed_search = self._provider_error_search_text(stage_error)
+            references = paper.get("references") or []
+            paper_candidates: list[dict[str, Any]] = []
+            for index, reference in enumerate(references, start=1):
+                if not isinstance(reference, dict):
+                    continue
+                ref_id = str(reference.get("ref_id") or f"ref-{index:04d}")
+                record = match_records.get((paper_id, ref_id), {})
+                override = overrides.get((paper_id, ref_id))
+                provider_scores = record.get("provider_scores") or {}
+                provider_errors = {
+                    name: str(value.get("error"))
+                    for name, value in provider_scores.items()
+                    if isinstance(value, dict) and value.get("error")
+                }
+                title = normalize_ws(reference.get("title") or "")
+                raw = normalize_ws(reference.get("raw_reference") or "")
+                searchable = title or raw
+                matches_stage_error = bool(
+                    stage_error
+                    and (
+                        not failed_search
+                        or searchable == failed_search
+                        or (
+                            len(failed_search) > 100
+                            and len(searchable) > 100
+                            and (failed_search in searchable or searchable in failed_search)
+                        )
+                    )
+                )
+                manual_recommended = any(
+                    isinstance(value, dict) and value.get("manual_doi_recommended")
+                    for value in provider_scores.values()
+                )
+                if not (matches_stage_error or provider_errors or manual_recommended or override):
+                    continue
+                paper_candidates.append({
+                    "paper_id": paper_id,
+                    "ref_id": ref_id,
+                    "title": title,
+                    "raw_reference": raw,
+                    "extracted_doi": str(reference.get("doi") or ""),
+                    "manual_doi": (override or {}).get("doi", ""),
+                    "stage_error": stage_error[:1200] if matches_stage_error else "",
+                    "provider_errors": provider_errors,
+                    "manual_doi_recommended": bool(matches_stage_error or manual_recommended),
+                })
+            if stage_error and not paper_candidates:
+                # The old resolver only recorded a paper-level exception. If the
+                # provider query cannot be mapped exactly, expose the references so
+                # the user can select the intended citation manually.
+                for index, reference in enumerate(references, start=1):
+                    if not isinstance(reference, dict):
+                        continue
+                    paper_candidates.append({
+                        "paper_id": paper_id,
+                        "ref_id": str(reference.get("ref_id") or f"ref-{index:04d}"),
+                        "title": normalize_ws(reference.get("title") or ""),
+                        "raw_reference": normalize_ws(reference.get("raw_reference") or ""),
+                        "extracted_doi": str(reference.get("doi") or ""),
+                        "manual_doi": "",
+                        "stage_error": stage_error[:1200],
+                        "provider_errors": {},
+                        "manual_doi_recommended": True,
+                    })
+            issues.extend(paper_candidates)
+        issues.sort(key=lambda item: (item["paper_id"], item["ref_id"]))
+        return issues
+
+    def save_reference_doi_override(
+        self, project_slug: str, paper_id: str, ref_id: str, doi_value: str, note: str = ""
+    ) -> str:
+        normalize_project_slug(project_slug)
+        paper_id = str(paper_id or "").strip()
+        ref_id = str(ref_id or "").strip()
+        doi = valid_doi(doi_value)
+        if not paper_id or not ref_id:
+            raise ValueError("Paper and reference are required")
+        conn = self.db()
+        try:
+            ensure_v4_schema(conn)
+            exists = conn.execute(
+                "SELECT 1 FROM papers WHERE paper_id=? AND active=1",
+                (paper_id,),
+            ).fetchone()
+            if not exists:
+                raise ValueError("Paper is not in the Master PDF Library")
+            paper_path = self.paths["paper_json"] / f"{paper_id}.json"
+            if not paper_path.exists():
+                raise ValueError("Paper JSON is not available yet")
+            paper = json.loads(paper_path.read_text(encoding="utf-8"))
+            valid_refs = {
+                str(reference.get("ref_id") or f"ref-{index:04d}")
+                for index, reference in enumerate(paper.get("references") or [], start=1)
+                if isinstance(reference, dict)
+            }
+            if ref_id not in valid_refs:
+                raise ValueError("Unknown reference ID for this paper")
+            conn.execute(
+                """
+                INSERT INTO reference_doi_overrides_v4(citing_paper_id,ref_id,doi,note,updated_at)
+                VALUES (?,?,?,?,?)
+                ON CONFLICT(citing_paper_id,ref_id) DO UPDATE SET
+                    doi=excluded.doi,note=excluded.note,updated_at=excluded.updated_at
+                """,
+                (paper_id, ref_id, doi, str(note or "")[:500], datetime.now(timezone.utc).isoformat(timespec="seconds")),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return doi
 
     def update_project_memberships(
         self,
@@ -658,7 +897,7 @@ class FolioSortApp:
 
     def start_curation(self) -> str:
         port = int((self.config.get("curation") or {}).get("feedback_port", 8765))
-        expected_version = "4.2.0-security-hardening"
+        expected_version = "4.2.2-security-hardening"
         old_server_running = False
         try:
             import urllib.request
@@ -820,6 +1059,13 @@ class Handler(BaseHTTPRequestHandler):
                 "papers": APP.master_library(slug),
                 "projects": APP.projects(),
             }); return
+        if parsed.path == "/api/reference_issues":
+            slug = self.project_from_query(parsed)
+            self.send_json({
+                "ok": True,
+                "project_slug": slug,
+                "issues": APP.reference_issues(slug),
+            }); return
         if parsed.path == "/network":
             slug = self.project_from_query(parsed); self.serve_file(project_network_dir(APP.root, slug) / "network.html", "text/html; charset=utf-8"); return
         if parsed.path == "/knowledge":
@@ -883,6 +1129,31 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": True,
                     "counts": counts,
                     "message": f"{action_labels.get(action, 'Updated project membership')}. Canonical PDFs and shared analysis were not moved or deleted. Run Analyze/update for affected projects to rebuild their graphs.",
+                }); return
+            if parsed.path == "/api/reference_override":
+                slug = self.project_from_query(parsed)
+                body = self.read_json_body(65536, "A DOI override request is required")
+                paper_id = str(body.get("paper_id") or "")
+                ref_id = str(body.get("ref_id") or "")
+                doi = APP.save_reference_doi_override(
+                    slug,
+                    paper_id,
+                    ref_id,
+                    str(body.get("doi") or ""),
+                    str(body.get("note") or ""),
+                )
+                running = APP.pipeline_running()
+                suffix = (
+                    " It will be applied on the next Analyze/update after the current pipeline finishes."
+                    if running
+                    else " Run Analyze/update to apply it; prior external results will be reused."
+                )
+                self.send_json({
+                    "ok": True,
+                    "paper_id": paper_id,
+                    "ref_id": ref_id,
+                    "doi": doi,
+                    "message": f"Saved DOI override {doi} for {paper_id} / {ref_id}.{suffix}",
                 }); return
             if parsed.path == "/api/create_project":
                 q = urllib.parse.parse_qs(parsed.query); name = (q.get("name") or [""])[0]

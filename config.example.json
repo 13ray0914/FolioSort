@@ -25,6 +25,8 @@
     "timeout_seconds": 900,
     "attempts": 4,
     "retry_wait_seconds": 5,
+    "detect_image_only_pdfs": true,
+    "image_only_sample_pages": 5,
     "consolidate_header": 0,
     "consolidate_citations": 0
   },
@@ -78,6 +80,8 @@
     "external_min_title_similarity": 0.84,
     "crossref_rows": 5,
     "max_external_queries_per_paper": 80,
+    "external_query_max_chars": 350,
+    "confirm_resolved_with_openalex": false,
     "local_accept_threshold": 0.9,
     "direct_doi_min_title_similarity": 0.55
   },

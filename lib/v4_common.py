@@ -92,6 +92,16 @@ def ensure_v4_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_reference_matches_v4_target
         ON reference_matches_v4(target_paper_id);
 
+        CREATE TABLE IF NOT EXISTS reference_doi_overrides_v4 (
+            citing_paper_id TEXT NOT NULL,
+            ref_id TEXT NOT NULL,
+            doi TEXT NOT NULL,
+            note TEXT,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (citing_paper_id, ref_id),
+            FOREIGN KEY (citing_paper_id) REFERENCES papers(paper_id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS knowledge_relations_v4 (
             source_claim_uid TEXT NOT NULL,
             target_claim_uid TEXT NOT NULL,
@@ -122,6 +132,14 @@ def normalize_doi(value: str | None) -> str:
     s = re.sub(r"^https?://(?:dx\.)?doi\.org/", "", s)
     s = re.sub(r"^doi\s*:\s*", "", s)
     return s.strip().strip(".,;()[]{}<>")
+
+
+def valid_doi(value: str | None) -> str:
+    """Return a normalized DOI or raise for input that cannot be a DOI."""
+    doi = normalize_doi(value)
+    if not re.fullmatch(r"10\.\d{4,9}/\S+", doi) or any(ch.isspace() for ch in doi):
+        raise ValueError("DOI must look like 10.xxxx/suffix")
+    return doi
 
 
 def normalize_openalex_id(value: str | None) -> str:
@@ -294,7 +312,17 @@ class CachedAPIClient:
                 (self.provider, key),
             ).fetchone()
             if row and row["response_json"]:
-                return int(row["status_code"] or 200), json.loads(row["response_json"])
+                status = int(row["status_code"] or 200)
+                # Keep successful and stable not-found responses. Older builds also
+                # cached transient 5xx/429 and malformed 4xx responses, which made a
+                # temporary provider failure look permanent on subsequent runs.
+                if 200 <= status < 300 or status == 404:
+                    return status, json.loads(row["response_json"])
+                self.conn.execute(
+                    "DELETE FROM api_cache_v4 WHERE provider=? AND cache_key=?",
+                    (self.provider, key),
+                )
+                self.conn.commit()
 
         elapsed = time.monotonic() - self._last_request
         if elapsed < self.min_interval:
@@ -324,12 +352,9 @@ class CachedAPIClient:
                 if attempt >= attempts:
                     break
                 time.sleep(1.5 * attempt)
-        if response is not None:
-            try:
-                body = response.json()
-            except Exception:
-                body = {"text": response.text[:1000]}
-            self._store_cache(key, url, params, response.status_code, body)
+        # Do not cache failures. Successful/404 responses are stored above; errors
+        # must remain retryable, while per-reference reuse prevents repeated calls
+        # during ordinary incremental project updates.
         raise RuntimeError(f"{self.provider} API request failed: {last_error}")
 
     def _store_cache(self, key: str, url: str, params: dict[str, Any] | None, status: int, data: Any) -> None:
