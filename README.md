@@ -38,7 +38,7 @@ PDF filenames are never treated as scientific evidence. They are retained only a
 - Project workspaces over a shared canonical PDF library
 - Resumable, hash-aware processing that skips unchanged stages
 
-## Pipeline
+## Process
 
 ```text
 PDFs
@@ -71,7 +71,7 @@ The automatic launcher is tuned for **Qwen3.8-27B Q4_K_M** with the Q4_0 MTP dra
 
 | Resource | Practical minimum for the default | Recommended | Notes |
 |---|---:|---:|---|
-| GPU | NVIDIA CUDA-capable GPU | Recent NVIDIA GPU | CPU-only and partial-offload execution are possible in llama.cpp but are much slower for this pipeline. |
+| GPU | NVIDIA CUDA-capable GPU | Recent NVIDIA GPU | CPU-only and partial-offload execution are possible in llama.cpp but are much slower for this workflow. |
 | VRAM | 24 GB | 32 GB or more | The tested RTX 4090 run used about 23.3/24.0 GiB. Other llama.cpp builds and display use can require extra headroom. |
 | System RAM | 32 GB | 64 GB or more | Use at least 64 GB when partially offloading to CPU, running other local models, or processing many large PDFs. |
 | Free disk | 25 GB for llama.cpp and the two GGUF files | 40 GB or more plus PDF/output space | FolioSort research data, GROBID images, embeddings, and backups need additional space. |
@@ -132,7 +132,7 @@ foliosort check
 foliosort serve
 ```
 
-The server stays in the foreground and is available at [http://127.0.0.1:8766](http://127.0.0.1:8766). The `Analyze` button inherits the pip environment used by `foliosort serve`. The core stages can also be run directly with, for example, `foliosort pipeline --from-step 6 --to-step 11`.
+The server stays in the foreground and is available at [http://127.0.0.1:8766](http://127.0.0.1:8766). The `Analyze` button inherits the pip environment used by `foliosort serve`. The core stages can also be run directly with the compatibility command `foliosort pipeline --from-step 6 --to-step 11`.
 
 For development from a local checkout, use `python -m pip install -e .` instead of the Git URL.
 
@@ -185,15 +185,15 @@ On Windows, a desktop shortcut can be created once with:
 ./scripts/install_windows_app.sh
 ```
 
-## Running the pipeline
+## Running the process
 
-Place PDFs in the configured raw-PDF directory or add them through the dashboard. For a full project update, use the dashboard's **Analyze / update selected project** button or run:
+Place PDFs in the configured raw-PDF directory or add them through the dashboard. For a full project update, use the dashboard's **Analyze / Update Selected Project** button or run:
 
 ```bash
 ./scripts/run_review_pipeline.sh
 ```
 
-The core eleven-stage pipeline can also be controlled directly:
+The core eleven-stage process can also be controlled directly:
 
 ```bash
 python run_pipeline.py

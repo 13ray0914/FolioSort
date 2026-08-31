@@ -1,4 +1,4 @@
-# ローカルLLM文献レビュー・パイプライン
+# ローカルLLM文献レビューツール
 
 このプロジェクトは、手元のPDFを次の順に処理するためのものです。
 
@@ -61,7 +61,7 @@ foliosort check
 foliosort serve
 ```
 
-browserで `http://127.0.0.1:8766` を開きます。core pipelineだけを直接実行する場合は、たとえば `foliosort pipeline --from-step 6 --to-step 11` を使用できます。開発用のlocal checkoutでは `python -m pip install -e .` も利用できます。
+browserで `http://127.0.0.1:8766` を開きます。core processだけを直接実行する場合は、互換コマンド `foliosort pipeline --from-step 6 --to-step 11` を使用できます。開発用のlocal checkoutでは `python -m pip install -e .` も利用できます。
 
 ### ローカルQwen実行環境
 
@@ -93,7 +93,7 @@ Qwenのweight、GGUF、llama.cpp、Docker自体はFolioSortのpip packageには�
 
 大量論文のレビューで最も危険なのは、「LLMが読みやすい要約を作ったが、その一文が元論文のどこに書いてあったか追えない」状態です。
 
-このパイプラインでは、本文中の各文に `s000001` のようなIDを付け、Qwenが抽出するmeasurementやclaimに必ず `evidence_sids` を付けます。
+FolioSortでは、本文中の各文に `s000001` のようなIDを付け、Qwenが抽出するmeasurementやclaimに必ず `evidence_sids` を付けます。
 
 例:
 
@@ -171,7 +171,7 @@ docker compose -f docker-compose.grobid.yml down
 
 # 3. Qwenをllama.cpp serverとして起動する
 
-このパイプラインはOpenAI互換の `/v1/chat/completions` を使います。
+FolioSortはOpenAI互換の `/v1/chat/completions` を使います。
 
 すでにQwen GGUFを動かしている場合、推論条件はなるべくそのまま使い、CLIではなく `llama-server` で起動してください。
 
@@ -704,7 +704,7 @@ profiles/my_domain/review_checklist.txt
 
 へ変えます。
 
-pipeline本体のtop-level contractは共通です。
+処理本体のtop-level contractは共通です。
 
 Inventory:
 
@@ -728,7 +728,7 @@ citation_contexts
 
 `systems[].attributes` の中身だけを分野ごとに変えられます。
 
-この構成により、分野固有のschemaとpromptを分離したまま、共通のpipelineを再利用できます。
+この構成により、分野固有のschemaとpromptを分離したまま、共通の処理フローを再利用できます。
 
 ---
 

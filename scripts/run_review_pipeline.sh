@@ -25,7 +25,7 @@ if [[ "${REVIEW_PIPELINE_LOCKED:-0}" != "1" ]]; then
   else
     rc=$?
     if [[ "$rc" -eq 200 ]]; then
-      echo "[$(date '+%F %T')] Another review pipeline is already running."
+      echo "[$(date '+%F %T')] Another review process is already running."
       exit 0
     fi
     exit "$rc"
@@ -35,7 +35,7 @@ fi
 exec > >(tee -a "$LOG") 2>&1
 
 echo
-echo "========== Review pipeline v4.3.0 $(date '+%F %T') =========="
+echo "========== Review process v4.3.0 $(date '+%F %T') =========="
 echo "Project scope: ${REVIEW_PROJECT:-all papers}"
 cd "$ROOT"
 if [[ -n "$PYTHON_BIN" ]]; then

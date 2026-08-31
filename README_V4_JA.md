@@ -1,4 +1,4 @@
-# Local Literature Review Pipeline v4
+# FolioSort v4 詳細ガイド
 
 このv4は、大学から正規に取得した**手元の査読済みPDFだけ**を対象にする設計です。Webから論文PDFを自動探索・自動取得する機能は追加していません。CrossrefとOpenAlexは、PDF取得ではなく、書誌情報・DOI・引用関係を補完するためにだけ使用します。
 
@@ -231,7 +231,7 @@ MinerUを無効に戻す場合：
 ./scripts/disable_optional_visual_tools.sh
 ```
 
-MinerUは比較的大きな環境です。初回モデル取得と解析には時間がかかります。デフォルトの`pipeline` backendは表・数式・画像領域の構造化を主目的とし、画像やチャートの意味解釈は別のvision modelで補います。MinerU側のVLM/hybrid image analysisを使う場合は、`config.json`の`visual.mineru.backend`を`hybrid-engine`等へ変え、`effort`を`high`にしてください。
+MinerUは比較的大きな環境です。初回モデル取得と解析には時間がかかります。デフォルトbackendは表・数式・画像領域の構造化を主目的とし、画像やチャートの意味解釈は別のvision modelで補います。MinerU側のVLM/hybrid image analysisを使う場合は、`config.json`の`visual.mineru.backend`を`hybrid-engine`等へ変え、`effort`を`high`にしてください。
 
 ## Level C: 別のmultimodal llama-server、任意
 
@@ -468,7 +468,7 @@ GUIを開く：
 
 ---
 
-# 10. パイプライン全体の実行
+# 10. 全処理の実行
 
 まず、text QwenとDocker Desktopが利用可能な状態で実行します。
 
@@ -574,7 +574,7 @@ python scripts/10_resolve_references.py --ids P0001 --local-only
 ./scripts/install_autostart.sh
 ```
 
-今後Ubuntu/WSLを最初に開いた時に、同じ`run_review_pipeline.sh`がバックグラウンドで動きます。`flock`により二重起動しません。
+今後Ubuntu/WSLを最初に開いた時に、同じ`run_review_pipeline.sh`がバックグラウンドで動きます。`flock`により処理の二重起動を防ぎます。
 
 解除：
 

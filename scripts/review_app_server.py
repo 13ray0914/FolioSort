@@ -67,11 +67,11 @@ HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 /* Theme and dashboard layout overrides. */
 :root{--page:#151515;--surface:#1c1c1f;--surface2:#222226;--control:#2a2a30;--line:#33343a;--line2:#303036;--text:#e8e8eb;--muted:#a1a1aa;--accent:#c4b5fd;--drop:#202024;--log:#111113;--primary-bg:#4c3c78;--primary-border:#7662ad;--primary-text:#fff;--danger-bg:#692e2e;--danger-border:#a44a4a;--danger-text:#fff;color-scheme:dark;background:var(--page);color:var(--text)}
 :root[data-theme="light"]{--page:#f4f5f7;--surface:#fff;--surface2:#f0f1f4;--control:#fff;--line:#d5d8df;--line2:#e2e4e9;--text:#202124;--muted:#62666f;--accent:#64748b;--drop:#f8f8fa;--log:#f7f7f9;--primary-bg:#e6ebf2;--primary-border:#c7d0dd;--primary-text:#334155;--danger-bg:#c81e1e;--danger-border:#991b1b;--danger-text:#fff;color-scheme:light}
-body{background:var(--page);color:var(--text);transition:background .15s,color .15s}.card{background:var(--surface);border-color:var(--line)}.muted,.hint{color:var(--muted)}button,.btn,input,select{background:var(--control);color:var(--text);border-color:var(--line)}.primary{background:var(--primary-bg);border-color:var(--primary-border);color:var(--primary-text)}.danger{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger-text)}.primary:hover,.danger:hover{filter:brightness(1.08)}.drop{background:var(--drop);border-color:var(--line)}.drop.drag{background:var(--surface2)}.metric,.primaryText{background:var(--surface2)}.divider{background:var(--line2)}.libraryList{background:var(--surface);border-color:var(--line2)}.librow{border-color:var(--line2)}.libtitle{color:var(--text)}.log{background:var(--log);color:var(--text);border-color:var(--line2)}
+html{overflow-y:scroll;scrollbar-gutter:stable}body{background:var(--page);color:var(--text);transition:background .15s,color .15s}.card{background:var(--surface);border-color:var(--line)}.muted,.hint{color:var(--muted)}button,.btn,input,select{background:var(--control);color:var(--text);border-color:var(--line)}.primary{background:var(--primary-bg);border-color:var(--primary-border);color:var(--primary-text)}.danger{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger-text)}.primary:hover,.danger:hover{filter:brightness(1.08)}.drop{background:var(--drop);border-color:var(--line)}.drop.drag{background:var(--surface2)}.metric,.primaryText{background:var(--surface2)}.divider{background:var(--line2)}.libraryList{background:var(--surface);border-color:var(--line2)}.librow{border-color:var(--line2)}.libtitle{color:var(--text)}.log{background:var(--log);color:var(--text);border-color:var(--line2)}
 :root[data-theme="light"] .primary:hover{background:#dce4ee;border-color:#b9c5d4;filter:none}
-.appHeader{height:76px;background:#111827;color:#fff;border-bottom:1px solid #293548;box-shadow:0 2px 12px rgba(0,0,0,.14)}.headerInner{height:100%;max-width:1320px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:28px}.brandLockup{display:flex;align-items:center;gap:11px;flex:none}.brandIcon{width:46px;height:46px;display:grid;place-items:center;color:#fff}.brandMark{width:46px;height:46px;display:block}.brandName{font-size:25px;font-weight:800;letter-spacing:-.025em}.appTabs{display:flex;align-self:stretch;gap:4px}.appTab{position:relative;border:0;border-radius:0;background:transparent;color:#cbd5e1;padding:0 18px;font-size:15px}.appTab:hover{border-color:transparent;color:#fff;background:rgba(255,255,255,.05)}.appTab[aria-selected="true"]{color:#fff;font-weight:700}.appTab[aria-selected="true"]::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:#fff}.appMeta{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}.versionBadge{border:1px solid rgba(255,255,255,.24);border-radius:999px;padding:7px 10px;font-size:12px;color:#dbe3ee;white-space:nowrap}.appHeader .themeToggle{width:auto;white-space:nowrap;padding:8px 11px;background:#1f2937;color:#fff;border-color:#46556b}.wrap{max-width:1320px;padding:16px 20px 20px}.appView[hidden]{display:none!important}.projectPage{height:calc(100vh - 112px);min-height:590px;display:grid;grid-template-rows:minmax(390px,1fr) clamp(145px,20vh,185px);gap:14px}.homeGrid{display:grid;grid-template-columns:1fr 1.15fr .75fr;gap:14px;margin-top:0;align-items:stretch;min-height:0}.homeGrid>.card{height:100%;min-height:0;overflow:auto}.homeGrid .results{margin-top:0}.projectCard .projectrow{grid-template-columns:1fr 1fr}.projectCard .projectrow select{grid-column:1/-1}.addCard{display:flex;flex-direction:column}.addCard .drop{padding:22px 18px}.addCard .files{flex:1;min-height:64px;max-height:145px}.results .toolbar{flex-direction:column}.results .toolbar button{width:100%;min-width:0}.pipelineCard{margin:0;padding:12px 16px;min-height:0;display:flex;flex-direction:column}.pipelineCard h2{margin-bottom:8px}.pipelineCard .log{min-height:0;max-height:none;flex:1;padding:8px}.settingsHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.settingsHeader h1{font-size:22px;margin:0 0 4px}.settingsGrid{display:grid;gap:14px}.settingsGrid .libraryCard,.settingsGrid .referenceCard{margin-top:0}.settingsLower{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,.55fr);gap:14px;align-items:start}.curationSettingsCard .toolbar{margin-top:14px}.curationSettingsCard .toolbar button{width:100%}
+.appHeader{height:76px;background:#111827;color:#fff;border-bottom:1px solid #293548;box-shadow:0 2px 12px rgba(0,0,0,.14)}.headerInner{height:100%;max-width:1320px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:28px}.brandLockup{display:flex;align-items:center;gap:11px;flex:none}.brandIcon{width:46px;height:46px;display:grid;place-items:center;color:#fff}.brandMark{width:46px;height:46px;display:block}.brandName{font-size:25px;font-weight:800;letter-spacing:-.025em}.appTabs{display:flex;align-self:stretch;gap:4px}.appTab{position:relative;border:0;border-radius:0;background:transparent;color:#cbd5e1;padding:0 18px;font-size:15px}.appTab:hover{border-color:transparent;color:#fff;background:rgba(255,255,255,.05)}.appTab[aria-selected="true"]{color:#fff;font-weight:700}.appTab[aria-selected="true"]::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:#fff}.appMeta{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}.versionBadge{border:1px solid rgba(255,255,255,.24);border-radius:999px;padding:7px 10px;font-size:12px;color:#dbe3ee;white-space:nowrap}.appHeader .themeToggle{width:auto;white-space:nowrap;padding:8px 11px;background:#1f2937;color:#fff;border-color:#46556b}.wrap{max-width:1320px;padding:16px 20px 20px}.appView[hidden]{display:none!important}.projectPage{height:calc(100vh - 112px);min-height:590px;display:grid;grid-template-rows:minmax(390px,1fr) clamp(145px,20vh,185px);gap:14px}.homeGrid{display:grid;grid-template-columns:1fr 1.15fr .75fr;gap:14px;margin-top:0;align-items:stretch;min-height:0}.homeGrid>.card{height:100%;min-height:0;overflow:auto}.homeGrid .results{margin-top:0}.projectCard .projectrow{grid-template-columns:1fr 1fr}.projectCard .projectrow select{grid-column:1/-1}.addCard{display:flex;flex-direction:column}.addCard .drop{padding:22px 18px}.addCard .files{flex:1;min-height:64px;max-height:145px}.pipelineActions button{flex:1 1 0;min-width:0}.results .toolbar{flex-direction:column}.results .toolbar button{width:100%;min-width:0}.pipelineCard{margin:0;padding:12px 16px;min-height:0;display:flex;flex-direction:column}.pipelineCard h2{margin-bottom:8px}.pipelineCard .log{min-height:0;max-height:none;flex:1;padding:8px}.settingsHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.settingsHeader h1{font-size:22px;margin:0 0 4px}.settingsGrid{display:grid;gap:14px}.settingsGrid .libraryCard,.settingsGrid .referenceCard,.settingsGrid .curationSettingsCard{margin-top:0}.curationSettingsCard .toolbar{margin-top:14px}.curationSettingsCard .toolbar button{width:100%}
 .referenceCard{margin-top:16px}.referenceControls{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(190px,.8fr) auto;gap:8px;margin-top:10px}.referenceNote{width:100%;margin-top:8px}.referenceDetail{margin-top:9px;padding:10px;border:1px solid var(--line2);border-radius:8px;background:var(--surface2);font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto}.referenceDetail.bad{color:var(--text);border-color:#b45353}
-@media(max-width:1000px){.projectPage{height:auto;min-height:0;display:block}.homeGrid{grid-template-columns:1fr 1fr}.results{grid-column:1/-1}.results .toolbar{flex-direction:row}.results .toolbar button{min-width:150px}.pipelineCard{height:170px;margin-top:14px}.settingsLower{grid-template-columns:1fr}.headerInner{gap:16px}}@media(max-width:700px){.appHeader{height:auto}.headerInner{min-height:76px;padding:10px 14px;gap:8px;flex-wrap:wrap}.brandIcon{width:40px;height:40px}.brandMark{width:40px;height:40px}.brandName{font-size:22px}.appTabs{height:42px;order:3;width:100%}.appTab{flex:1;padding:0 12px}.appMeta{margin-left:auto}.versionBadge{display:none}.wrap{padding:14px}.homeGrid{grid-template-columns:1fr}.results{grid-column:auto}.homeGrid>.card{overflow:visible}.pipelineCard{height:170px}.results .toolbar{flex-direction:column}.referenceControls{grid-template-columns:1fr}.settingsHeader{display:block}}
+@media(max-width:1000px){.projectPage{height:auto;min-height:0;display:block}.homeGrid{grid-template-columns:1fr 1fr}.results{grid-column:1/-1}.results .toolbar{flex-direction:row}.results .toolbar button{min-width:150px}.pipelineCard{height:170px;margin-top:14px}.headerInner{gap:16px}}@media(max-width:700px){.appHeader{height:auto}.headerInner{min-height:76px;padding:10px 14px;gap:8px;flex-wrap:wrap}.brandIcon{width:40px;height:40px}.brandMark{width:40px;height:40px}.brandName{font-size:22px}.appTabs{height:42px;order:3;width:100%}.appTab{flex:1;padding:0 12px}.appMeta{margin-left:auto}.versionBadge{display:none}.wrap{padding:14px}.homeGrid{grid-template-columns:1fr}.results{grid-column:auto}.homeGrid>.card{overflow:visible}.pipelineCard{height:170px}.results .toolbar{flex-direction:column}.referenceControls{grid-template-columns:1fr}.settingsHeader{display:block}}
 </style></head><body>
 <header class="appHeader">
   <div class="headerInner">
@@ -102,8 +102,8 @@ body{background:var(--page);color:var(--text);transition:background .15s,color .
     <div id="drop" class="drop" tabindex="0"><b>Drop PDF files here</b><span>or click to choose files</span><input id="pick" type="file" accept="application/pdf,.pdf" multiple class="hidden"></div>
     <div id="uploadMsg" class="hint">New PDFs are ingested into the canonical library and assigned to the selected project. Exact byte-identical duplicates reuse the existing paper ID.</div>
     <div id="files" class="files"></div>
-    <div class="pipelineActions"><button id="analyze" class="primary">Analyze / update selected project</button><button id="stopPipeline" class="danger" disabled>Stop pipeline</button></div>
-    <div class="statusline"><span id="pipePill" class="pill">Pipeline: checking</span><span id="svcPill" class="pill">FolioSort: ready</span></div>
+    <div class="pipelineActions"><button id="analyze" class="primary">Analyze / Update<br>Selected Project</button><button id="stopPipeline" class="danger" disabled>Stop Process</button></div>
+    <div class="statusline"><span id="pipePill" class="pill">Process: checking</span><span id="svcPill" class="pill">FolioSort: ready</span></div>
   </div>
   <div class="card results">
     <h2>Results</h2>
@@ -111,7 +111,7 @@ body{background:var(--page);color:var(--text);transition:background .15s,color .
     <div class="hint">Results open only the selected project. Analyze affected projects after changing membership.</div>
   </div>
 </div>
-<div class="card pipelineCard"><h2>Pipeline log</h2><div id="log" class="log">Waiting for status...</div></div>
+<div class="card pipelineCard"><h2>Process log</h2><div id="log" class="log">Waiting for status...</div></div>
 </div>
 </section>
 <section id="settingsView" class="appView" role="tabpanel" aria-labelledby="settingsTab" hidden>
@@ -126,20 +126,18 @@ body{background:var(--page);color:var(--text);transition:background .15s,color .
   <div class="libraryTarget"><select id="targetProject"></select><button id="copyTarget">Copy to target</button><button id="moveTarget">Move to target</button></div>
   <div id="libraryMsg" class="hint">Removing from a project never deletes the canonical PDF. “Move” means add membership to the target project and remove membership from the current project.</div>
 </div>
-<div class="settingsLower">
-  <div class="card referenceCard">
+<div class="card referenceCard">
     <h2>Manual reference DOI</h2>
     <div class="muted">References rejected by Crossref/OpenAlex can be corrected here. Choose the failed citation—not the citing paper itself—and enter its DOI. The override is preserved and used on the next Analyze/update without free-text API search. OCR/body text mistakenly extracted as a reference is now skipped automatically; leave it without a DOI unless it is a real citation.</div>
     <div class="referenceControls"><select id="referenceIssue"></select><input id="referenceDoi" placeholder="10.xxxx/suffix"><button id="saveReferenceDoi" class="primary">Save DOI override</button></div>
     <input id="referenceNote" class="referenceNote" placeholder="Optional note or source for this correction">
     <div id="referenceDetail" class="referenceDetail muted">Loading reference-resolution issues…</div>
     <div id="referenceMsg" class="hint">After saving, run Analyze/update. Existing external results are reused, so only new or corrected references require external lookup.</div>
-  </div>
-  <div class="card curationSettingsCard">
-    <h2>Curation editor</h2>
-    <div class="muted">Review and correct generated paper metadata and analysis in the dedicated curation workspace.</div>
-    <div class="toolbar"><button id="curation">Open curation editor</button></div>
-  </div>
+</div>
+<div class="card curationSettingsCard">
+  <h2>Curation editor</h2>
+  <div class="muted">Review and correct generated paper metadata and analysis in the dedicated curation workspace.</div>
+  <div class="toolbar"><button id="curation">Open curation editor</button></div>
 </div>
 </div>
 </section>
@@ -162,7 +160,7 @@ function visibleLibraryRows(){const q=$('librarySearch').value.trim().toLowerCas
 function renderLibrary(){const rows=visibleLibraryRows();$('librarySummary').innerHTML=`${rows.length}/${libraryPapers.length} shown · <span class="selection">${selectedLibraryPapers.size} selected</span>`;$('libraryList').innerHTML=rows.map(p=>`<label class="librow"><input type="checkbox" data-paper="${esc(p.paper_id)}" ${selectedLibraryPapers.has(p.paper_id)?'checked':''}><span>${esc(p.paper_id)}</span><span class="libyear">${esc(p.year??'?')}</span><span><div class="libtitle">${esc(p.title||p.original_filename||'(untitled)')}</div><div class="libmeta">${esc(p.authors||'')} ${p.journal?`· ${esc(p.journal)}`:''}${p.doi?` · ${esc(p.doi)}`:''}<br><span class="${p.in_current_project?'member':'notmember'}">${p.in_current_project?'In current project':'Not in current project'}</span>${(p.project_names||[]).length?` · projects: ${esc(p.project_names.join(', '))}`:''}</div></span></label>`).join('')||'<div class="muted" style="padding:12px">No matching papers.</div>';$('libraryList').querySelectorAll('[data-paper]').forEach(cb=>cb.addEventListener('change',()=>{if(cb.checked)selectedLibraryPapers.add(cb.dataset.paper);else selectedLibraryPapers.delete(cb.dataset.paper);renderLibrary()}));populateTargetProjects()}
 function selectedReferenceIssue(){const i=parseInt($('referenceIssue').value,10);return Number.isFinite(i)?referenceIssues[i]:null}
 function renderReferenceIssues(){const select=$('referenceIssue');select.innerHTML=referenceIssues.map((item,index)=>{const label=(item.title||item.raw_reference||'(citation text unavailable)').slice(0,115);return `<option value="${index}">${esc(item.paper_id)} · ${esc(item.ref_id)} · ${esc(label)}</option>`}).join('')||'<option value="">No DOI corrections currently requested</option>';select.disabled=!referenceIssues.length;$('saveReferenceDoi').disabled=!referenceIssues.length;showReferenceIssue()}
-function showReferenceIssue(){const item=selectedReferenceIssue();if(!item){$('referenceDoi').value='';$('referenceDetail').textContent='No reference-level provider errors are currently available for manual correction.';$('referenceDetail').className='referenceDetail muted';return}$('referenceDoi').value=item.manual_doi||item.extracted_doi||'';const errors=Object.entries(item.provider_errors||{}).map(([name,value])=>`${name}: ${value}`).join('\n');$('referenceDetail').textContent=`${item.paper_id} / ${item.ref_id}\n${item.title||item.raw_reference||'(no citation text)'}${errors?`\n\n${errors}`:''}${item.stage_error?`\n\nPipeline error: ${item.stage_error}`:''}`;$('referenceDetail').className='referenceDetail bad'}
+function showReferenceIssue(){const item=selectedReferenceIssue();if(!item){$('referenceDoi').value='';$('referenceDetail').textContent='No reference-level provider errors are currently available for manual correction.';$('referenceDetail').className='referenceDetail muted';return}$('referenceDoi').value=item.manual_doi||item.extracted_doi||'';const errors=Object.entries(item.provider_errors||{}).map(([name,value])=>`${name}: ${value}`).join('\n');$('referenceDetail').textContent=`${item.paper_id} / ${item.ref_id}\n${item.title||item.raw_reference||'(no citation text)'}${errors?`\n\n${errors}`:''}${item.stage_error?`\n\nProcess error: ${item.stage_error}`:''}`;$('referenceDetail').className='referenceDetail bad'}
 async function refreshReferenceIssues(){try{const j=await jsonFetch(purl('/api/reference_issues'));referenceIssues=j.issues||[];renderReferenceIssues()}catch(e){$('referenceDetail').textContent='Could not load reference issues: '+e;$('referenceDetail').className='referenceDetail bad'}}
 $('referenceIssue').addEventListener('change',showReferenceIssue);$('saveReferenceDoi').onclick=async()=>{const item=selectedReferenceIssue();if(!item)return;const doi=$('referenceDoi').value.trim();if(!doi){$('referenceMsg').textContent='Enter a DOI such as 10.xxxx/suffix.';return}$('referenceMsg').textContent='Saving DOI override…';try{const j=await jsonFetch(purl('/api/reference_override'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paper_id:item.paper_id,ref_id:item.ref_id,doi,note:$('referenceNote').value})});$('referenceMsg').textContent=j.message;await refreshReferenceIssues()}catch(e){$('referenceMsg').textContent='Could not save DOI override: '+e}};
 async function refreshLibrary(){try{const j=await jsonFetch(purl('/api/library'));libraryPapers=j.papers||[];projectRows=j.projects||projectRows;const valid=new Set(libraryPapers.map(p=>p.paper_id));selectedLibraryPapers=new Set([...selectedLibraryPapers].filter(x=>valid.has(x)));renderLibrary()}catch(e){$('libraryMsg').textContent='Could not load Master PDF library: '+e}}
@@ -171,10 +169,10 @@ $('librarySearch').addEventListener('input',renderLibrary);$('libraryFilter').ad
 $('project').addEventListener('change',async()=>{currentProject=$('project').value;saveProject();selectedLibraryPapers.clear();await refresh();await refreshLibrary();await refreshReferenceIssues()});
 $('newProject').onclick=async()=>{const name=prompt('New project name');if(!name)return;try{const j=await jsonFetch('/api/create_project?name='+encodeURIComponent(name),{method:'POST'});currentProject=j.project_slug;saveProject();await refresh();await refreshLibrary();$('uploadMsg').textContent=`Project created: ${j.name}`}catch(e){alert(e)}};
 $('renameProject').onclick=async()=>{const selected=$('project').selectedOptions[0];const name=prompt('New display name for this project',selected?selected.textContent.replace(/\s*\(\d+\)\s*$/,''):'');if(!name)return;try{await jsonFetch('/api/rename_project?project='+encodeURIComponent(currentProject)+'&name='+encodeURIComponent(name),{method:'POST'});await refresh();await refreshLibrary()}catch(e){alert(e)}};
-$('analyze').onclick=async()=>{try{const j=await jsonFetch(purl('/api/analyze'),{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not start pipeline: '+e}};
-$('stopPipeline').onclick=async()=>{if(!confirm('Stop the running pipeline? Completed outputs will be kept.'))return;$('stopPipeline').disabled=true;$('uploadMsg').textContent='Stopping pipeline...';try{const j=await jsonFetch('/api/stop_pipeline',{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not stop pipeline: '+e;await refresh()}};
+$('analyze').onclick=async()=>{try{const j=await jsonFetch(purl('/api/analyze'),{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not start process: '+e}};
+$('stopPipeline').onclick=async()=>{if(!confirm('Stop the running process? Completed outputs will be kept.'))return;$('stopPipeline').disabled=true;$('uploadMsg').textContent='Stopping process...';try{const j=await jsonFetch('/api/stop_pipeline',{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not stop process: '+e;await refresh()}};
 $('network').onclick=()=>window.open(purl('/network'),'_blank');$('knowledge').onclick=()=>window.open(purl('/knowledge'),'_blank');$('curation').onclick=async()=>{try{await jsonFetch('/api/start_curation',{method:'POST'});window.open('http://127.0.0.1:8765/','_blank')}catch(e){alert(e)}};
-async function refresh(){if(refreshing)return;refreshing=true;try{const j=await jsonFetch(purl('/api/status'));const sel=$('project');projectRows=j.projects||[];if(!projectRows.some(p=>p.project_slug===currentProject)){currentProject=projectRows[0]?.project_slug||'default';saveProject()}sel.innerHTML=projectRows.map(p=>`<option value="${esc(p.project_slug)}" ${p.project_slug===currentProject?'selected':''}>${esc(p.name)} (${p.active_papers})</option>`).join('');populateTargetProjects();$('active').textContent=j.active_papers;$('memory').textContent=j.memory_count;$('networkState').textContent=j.network_stale?'stale':(j.network_ready?'ready':'not yet');$('projectDisplay').textContent=`${j.project_name} · ${currentProject}`;let runText=j.pipeline_running?'running':'idle';if(j.pipeline_running&&j.running_project_name)runText+=` · ${j.running_project_name}`;$('pipePill').textContent='Pipeline: '+runText;$('pipePill').className='pill '+(j.pipeline_running?'busy':'ok');$('stopPipeline').disabled=!j.pipeline_stoppable;$('stopPipeline').title=j.pipeline_running&&!j.pipeline_stoppable?'This pipeline was not started by FolioSort, so FolioSort will not kill an unknown terminal process.':'';$('files').innerHTML=(j.raw_pdfs||[]).slice(-30).reverse().map(f=>`<div class="file">${esc(f.name)} <span class="muted">${fmtBytes(f.size)}</span>${f.paper_id?` <span class="muted">(${esc(f.paper_id)})</span>`:''}</div>`).join('')||'<div class="muted">No PDFs in this project yet.</div>';$('log').textContent=j.log_tail||'No pipeline log yet.';const L=$('log');L.scrollTop=L.scrollHeight;$('svcPill').textContent='FolioSort: ready';$('svcPill').className='pill ok'}catch(e){$('svcPill').textContent='FolioSort: disconnected';$('svcPill').className='pill bad'}finally{refreshing=false}}
+async function refresh(){if(refreshing)return;refreshing=true;try{const j=await jsonFetch(purl('/api/status'));const sel=$('project');projectRows=j.projects||[];if(!projectRows.some(p=>p.project_slug===currentProject)){currentProject=projectRows[0]?.project_slug||'default';saveProject()}sel.innerHTML=projectRows.map(p=>`<option value="${esc(p.project_slug)}" ${p.project_slug===currentProject?'selected':''}>${esc(p.name)} (${p.active_papers})</option>`).join('');populateTargetProjects();$('active').textContent=j.active_papers;$('memory').textContent=j.memory_count;$('networkState').textContent=j.network_stale?'stale':(j.network_ready?'ready':'not yet');$('projectDisplay').textContent=`${j.project_name} · ${currentProject}`;let runText=j.pipeline_running?'running':'idle';if(j.pipeline_running&&j.running_project_name)runText+=` · ${j.running_project_name}`;$('pipePill').textContent='Process: '+runText;$('pipePill').className='pill '+(j.pipeline_running?'busy':'ok');$('stopPipeline').disabled=!j.pipeline_stoppable;$('stopPipeline').title=j.pipeline_running&&!j.pipeline_stoppable?'This process was not started by FolioSort, so FolioSort will not stop an unknown process.':'';$('files').innerHTML=(j.raw_pdfs||[]).slice(-30).reverse().map(f=>`<div class="file">${esc(f.name)} <span class="muted">${fmtBytes(f.size)}</span>${f.paper_id?` <span class="muted">(${esc(f.paper_id)})</span>`:''}</div>`).join('')||'<div class="muted">No PDFs in this project yet.</div>';const visibleLog=(j.log_tail||'No process log yet.').replace(/\bPipeline\b/g,'Process').replace(/\bpipeline\b/g,'process');$('log').textContent=visibleLog;const L=$('log');L.scrollTop=L.scrollHeight;$('svcPill').textContent='FolioSort: ready';$('svcPill').className='pill ok'}catch(e){$('svcPill').textContent='FolioSort: disconnected';$('svcPill').className='pill bad'}finally{refreshing=false}}
 (async()=>{await refresh();await refreshLibrary();await refreshReferenceIssues()})();setInterval(refresh,2500);setInterval(refreshLibrary,15000);setInterval(refreshReferenceIssues,30000);
 </script></body></html>'''.replace("__APP_VERSION__", APP_VERSION.split("-", 1)[0])
 
@@ -864,7 +862,7 @@ class FolioSortApp:
     def start_pipeline(self, project_slug: str) -> tuple[bool, str]:
         slug = normalize_project_slug(project_slug)
         if self.pipeline_running():
-            return False, "Pipeline is already running."
+            return False, "Process is already running."
         # Ensure the project exists before launching a long-running child.
         conn = self.db()
         try:
@@ -896,34 +894,34 @@ class FolioSortApp:
                 pass
 
         threading.Thread(target=cleanup, daemon=True).start()
-        return True, f"Pipeline started for project: {name}. Existing analysis is reused; only this project's graphs are rebuilt."
+        return True, f"Process started for project: {name}. Existing analysis is reused; only this project's graphs are rebuilt."
 
     def stop_pipeline(self, grace_seconds: float = 8.0) -> tuple[bool, str]:
         pid = self.owned_pipeline_pid()
         if pid is None:
             if self.pipeline_running():
-                return False, "A pipeline is running, but it was not started by FolioSort. It was left untouched for safety."
-            return False, "Pipeline is already idle."
+                return False, "A process is running, but it was not started by FolioSort. It was left untouched for safety."
+            return False, "Process is already idle."
         self.append_log_marker(f"STOP requested from GUI for process group {pid}")
         try:
             os.killpg(pid, signal.SIGTERM)
         except ProcessLookupError:
             self.pipeline_pid_file.unlink(missing_ok=True)
-            return False, "Pipeline had already stopped."
+            return False, "Process had already stopped."
         deadline = time.monotonic() + max(1.0, grace_seconds)
         while time.monotonic() < deadline:
             try:
                 os.killpg(pid, 0)
             except ProcessLookupError:
                 self.pipeline_pid_file.unlink(missing_ok=True)
-                self.append_log_marker("Pipeline stopped gracefully after GUI request")
-                return True, "Pipeline stopped gracefully. Completed outputs were kept."
+                self.append_log_marker("Process stopped gracefully after GUI request")
+                return True, "Process stopped gracefully. Completed outputs were kept."
             time.sleep(0.25)
         try:
             os.killpg(pid, signal.SIGKILL)
-            message = "Pipeline did not stop within 8 seconds, so the app force-stopped its process group. Completed outputs were kept."
+            message = "Process did not stop within 8 seconds, so the app force-stopped its process group. Completed outputs were kept."
         except ProcessLookupError:
-            message = "Pipeline stopped. Completed outputs were kept."
+            message = "Process stopped. Completed outputs were kept."
         self.pipeline_pid_file.unlink(missing_ok=True)
         self.append_log_marker(message)
         return True, message
@@ -1177,7 +1175,7 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 running = APP.pipeline_running()
                 suffix = (
-                    " It will be applied on the next Analyze/update after the current pipeline finishes."
+                    " It will be applied on the next Analyze/Update after the current process finishes."
                     if running
                     else " Run Analyze/update to apply it; prior external results will be reused."
                 )
@@ -1237,11 +1235,11 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     global APP
-    ap=argparse.ArgumentParser(description="Windows-facing local dashboard for the literature review pipeline")
+    ap=argparse.ArgumentParser(description="Windows-facing local dashboard for the literature review process")
     ap.add_argument("--config", default=str(ROOT / "config.json")); ap.add_argument("--host", default="127.0.0.1"); ap.add_argument("--port", type=int, default=8766)
     args=ap.parse_args(); APP=FolioSortApp(args.config)
     print(f"FolioSort: http://{args.host}:{args.port}/")
-    print("Select a project, drop PDFs, Analyze, and use Stop pipeline when needed.")
+    print("Select a project, drop PDFs, Analyze, and use Stop Process when needed.")
     ThreadingHTTPServer((args.host,args.port),Handler).serve_forever()
 
 if __name__ == "__main__": main()
