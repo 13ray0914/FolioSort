@@ -1,4 +1,4 @@
-# ローカルLLM文献レビュー・パイプライン（PEG profile）
+# ローカルLLM文献レビュー・パイプライン
 
 このプロジェクトは、手元のPDFを次の順に処理するためのものです。
 
@@ -100,7 +100,7 @@ Qwenのweight、GGUF、llama.cpp、Docker自体はFolioSortのpip packageには�
 ```json
 {
   "claim_id": "C0007",
-  "statement": "The hydration behavior changed with PEG chain length.",
+  "statement": "The reported property changed under the tested condition.",
   "evidence_sids": ["s000381", "s000382"]
 }
 ```
@@ -123,7 +123,7 @@ Qwenのweight、GGUF、llama.cpp、Docker自体はFolioSortのpip packageには�
 プロジェクトディレクトリへ移動します。
 
 ```bash
-cd peg_literature_pipeline
+cd foliosort-workspace
 ```
 
 Python仮想環境を作ります。
@@ -217,7 +217,7 @@ python check_environment.py
 
 ---
 
-# 5. 約70報のPDFを入れる
+# 5. PDFを追加する
 
 現在のPDF名は変更しなくて構いません。
 
@@ -233,11 +233,11 @@ data/raw_pdfs/
 
 ```text
 data/raw_pdfs/
-  1974_Journal_水中コンフォメーション.pdf
-  1998_Macromolecules_PEG水和.pdf
-  2021_JPCB_THzによる水和解析.pdf
+  2001_Journal_研究論文A.pdf
+  2015_Journal_研究論文B.pdf
+  2024_Journal_研究論文C.pdf
   review/
-    2023_Review_PEG応用総説.pdf
+    2023_Review_総説.pdf
 ```
 
 日本語要約部分は無視されます。
@@ -297,44 +297,13 @@ python scripts/01_make_manifest.py
 
 ---
 
-# 7. まず10報だけpilotにする
+# 7. Script 02: PDF -> GROBID TEI XML
 
-最初から70報全部をQwenに処理させないでください。
-
-`data/manifest.csv` を見て、内容をよく知っている10報を選びます。
-
-例:
-
-```text
-P0002
-P0005
-P0008
-P0011
-P0017
-P0021
-P0030
-P0042
-P0055
-P0068
-```
-
-以後:
-
-```bash
---ids P0002,P0005,P0008,P0011,P0017,P0021,P0030,P0042,P0055,P0068
-```
-
-と指定します。
-
----
-
-# 8. Script 02: PDF -> GROBID TEI XML
-
-pilot 10報なら:
+特定の論文だけを処理する例:
 
 ```bash
 python scripts/02_grobid_parse.py \
-  --ids P0002,P0005,P0008,P0011,P0017,P0021,P0030,P0042,P0055,P0068
+  --ids P0002,P0005
 ```
 
 出力:
@@ -360,11 +329,11 @@ data/tei/P0002.tei.xml
 
 ---
 
-# 9. Script 03: TEI XML -> Qwen用JSON
+# 8. Script 03: TEI XML -> Qwen用JSON
 
 ```bash
 python scripts/03_tei_to_json.py \
-  --ids P0002,P0005,P0008,P0011,P0017,P0021,P0030,P0042,P0055,P0068
+  --ids P0002,P0005
 ```
 
 出力:
@@ -411,7 +380,7 @@ table0001
 
 ### この段階で一度確認すること
 
-pilotのうち2〜3報について `data/paper_json/Pxxxx.json` を開き、
+いくつかの論文について `data/paper_json/Pxxxx.json` を開き、
 
 - titleが正しい
 - abstractが入っている
@@ -423,11 +392,11 @@ pilotのうち2〜3報について `data/paper_json/Pxxxx.json` を開き、
 
 ---
 
-# 10. Script 04: QwenでPaper Inventoryを抽出
+# 9. Script 04: QwenでPaper Inventoryを抽出
 
 ```bash
 python scripts/04_extract_inventory.py \
-  --ids P0002,P0005,P0008,P0011,P0017,P0021,P0030,P0042,P0055,P0068
+  --ids P0002,P0005
 ```
 
 出力:
@@ -436,19 +405,12 @@ python scripts/04_extract_inventory.py \
 data/extracted/P0002.inventory.json
 ```
 
-PEG profileでは主に:
+profileの設定に従って主に:
 
 - article type
 - objective
-- PEG / PEO / OEG system
-- degree of polymerization
-- Mn
-- Mw
-- dispersity
-- end groups
-- topology
-- architecture
-- monodispersity status
+- studied systems
+- system attributes
 - methods
 - studied properties
 - global conditions
@@ -460,20 +422,11 @@ PEG profileでは主に:
 ```json
 {
   "system_id": "SYS001",
-  "system_name_raw": "tetraethylene glycol dimethyl ether",
-  "normalized_name": "tetraethylene glycol dimethyl ether",
+  "system_name_raw": "sample A",
+  "normalized_name": "sample a",
   "attributes": {
-    "peg_family": "OEG",
-    "dp_raw": "4",
-    "dp_min": 4,
-    "dp_max": 4,
-    "mn_raw": null,
-    "mw_raw": null,
-    "dispersity_raw": null,
-    "end_groups": ["methyl", "methyl"],
-    "topology": "linear",
-    "architecture": null,
-    "monodispersity_status": "discrete oligomer",
+    "composition": "reported composition",
+    "state": "reported state",
     "other_descriptors": []
   },
   "evidence_sids": ["s000122"]
@@ -502,11 +455,11 @@ data/llm_raw/P0002/inventory/
 
 ---
 
-# 11. Script 05: measurement / claim / citation context抽出
+# 10. Script 05: measurement / claim / citation context抽出
 
 ```bash
 python scripts/05_extract_evidence.py \
-  --ids P0002,P0005,P0008,P0011,P0017,P0021,P0030,P0042,P0055,P0068
+  --ids P0002,P0005
 ```
 
 出力:
@@ -520,11 +473,11 @@ data/extracted/P0002.evidence.json
 ```json
 {
   "measurement_id": "M0001",
-  "property_normalized": "hydration_number",
-  "value_raw": "1.3 water molecules per EO unit",
-  "parsed_value": 1.3,
-  "unit_raw": "water molecules per EO unit",
-  "conditions_text": "at 298 K",
+  "property_normalized": "reported_property",
+  "value_raw": "42.0 reported units",
+  "parsed_value": 42.0,
+  "unit_raw": "reported unit",
+  "conditions_text": "under the stated experimental condition",
   "system_refs": ["SYS002"],
   "status": "explicitly_reported",
   "evidence_sids": ["s000381"]
@@ -564,11 +517,11 @@ reviewでは本文全体を使えますが、`review_synthesis` と `cited_liter
 
 ---
 
-# 12. Script 06: LLMとは独立した機械的validation
+# 11. Script 06: LLMとは独立した機械的validation
 
 ```bash
 python scripts/06_validate_extraction.py \
-  --ids P0002,P0005,P0008,P0011,P0017,P0021,P0030,P0042,P0055,P0068
+  --ids P0002,P0005
 ```
 
 出力:
@@ -604,11 +557,11 @@ review_required
 
 ---
 
-# 13. Script 07: 人間確認用report
+# 12. Script 07: 人間確認用report
 
 ```bash
 python scripts/07_review_report.py \
-  --ids P0002,P0005,P0008,P0011,P0017,P0021,P0030,P0042,P0055,P0068
+  --ids P0002,P0005
 ```
 
 出力:
@@ -648,55 +601,19 @@ python scripts/07_review_report.py --approve P0002 P0005 P0008
 問題があれば:
 
 ```bash
-python scripts/07_review_report.py --reject P0011 --note "PEG molecular weight was incorrectly parsed"
+python scripts/07_review_report.py --reject P0011 --note "A reported value was parsed incorrectly"
 ```
 
 human statusはSQLiteとmanifestへ保存されます。
 
 ---
 
-# 14. Pilot 10報で何を確認するか
+# 13. Prompt/schemaを直した場合
 
-特に以下をPDFと照合してください。
-
-## 最優先
-
-- chain length / DP
-- Mn / Mw
-- dispersity
-- end group
-- solvent
-- temperature
-- concentration
-- numerical values
-- units
-- hydration等のproperty definition
-- claimの因果関係
-- evidence sentence
-
-## 合格基準の目安
-
-最初は厳しく:
+分野固有の設定は:
 
 ```text
-存在しないevidence ID: 0
-重要な数値の誤り: 0
-単位の誤り: 0
-他論文の結果をown resultとした重大誤分類: 0
-```
-
-を目標にしてください。
-
-重要claimの取りこぼしが多い場合はprompt/schemaを修正して再実行します。
-
----
-
-# 15. Prompt/schemaを直した場合
-
-PEG固有の設定は:
-
-```text
-profiles/peg/
+profiles/<profile>/
   inventory.schema.json
   evidence.schema.json
   prompts/
@@ -707,7 +624,7 @@ profiles/peg/
 
 に隔離されています。
 
-例えばhydration関連項目を追加したら、該当schema/promptのhashが変わります。
+例えば抽出対象の項目を追加したら、該当schema/promptのhashが変わります。
 
 次にscriptを実行すると、その変更の影響を受けるstageは自動的にout-of-dateと判断されて再処理されます。
 
@@ -723,35 +640,9 @@ python scripts/04_extract_inventory.py --ids P0002 --force
 
 ---
 
-# 16. Pilotが通ったら70報全部を処理する
+# 14. 後からPDFを追加する運用
 
-GROBIDとQwen serverを起動した状態で:
-
-```bash
-python run_pipeline.py
-```
-
-これだけでStep 1〜7を順番に実行します。
-
-各stageはcurrentならskipするため、既存70報のうち未処理分だけ進みます。
-
-### 途中でPCを使いたくなったら
-
-普通にPython processを止めても構いません。
-
-次回:
-
-```bash
-python run_pipeline.py
-```
-
-とすれば、完成済みstage/chunkを再利用して再開します。
-
----
-
-# 17. 後からPDFを追加する運用
-
-例えば1か月後に15報追加した場合:
+後からPDFを追加した場合:
 
 ```bash
 cp /somewhere/new_papers/*.pdf data/raw_pdfs/
@@ -760,20 +651,20 @@ python run_pipeline.py
 
 です。
 
-既存70報はcurrentならskipし、新規15報だけが流れます。
+既存論文はcurrentならskipし、新規または変更された論文だけが流れます。
 
 つまり、このフォルダ自体を「育てていく文献データベース」として使えます。
 
 ---
 
-# 18. 毎晩自動処理する場合
+# 15. 毎晩自動処理する場合
 
-まず手動で70報を通して安定性を確認してください。
+まず手動実行で環境と出力を確認してください。
 
 その後はOSのschedulerから:
 
 ```bash
-cd /path/to/peg_literature_pipeline
+cd /path/to/foliosort-workspace
 source .venv/bin/activate
 python run_pipeline.py >> logs/nightly.log 2>&1
 ```
@@ -784,23 +675,23 @@ LLM serverとGROBIDを常駐させるか、scheduler側で先に起動する構�
 
 ---
 
-# 19. 別分野へ再利用する方法
+# 16. 別分野へ再利用する方法
 
 Python本体は原則変更しません。
 
-例えば「G-quadruplex ligandの文献レビュー」に変えるなら:
+新しい分野用のprofileを作る場合:
 
 ```bash
-cp -r profiles/peg profiles/g4_ligand
+cp -r profiles/_template profiles/my_domain
 ```
 
 そして:
 
 ```text
-profiles/g4_ligand/inventory.schema.json
-profiles/g4_ligand/evidence.schema.json
-profiles/g4_ligand/prompts/*.txt
-profiles/g4_ligand/review_checklist.txt
+profiles/my_domain/inventory.schema.json
+profiles/my_domain/evidence.schema.json
+profiles/my_domain/prompts/*.txt
+profiles/my_domain/review_checklist.txt
 ```
 
 だけをその分野向けに変更します。
@@ -808,7 +699,7 @@ profiles/g4_ligand/review_checklist.txt
 `config.json`:
 
 ```json
-"profile": "g4_ligand"
+"profile": "my_domain"
 ```
 
 へ変えます。
@@ -837,58 +728,16 @@ citation_contexts
 
 `systems[].attributes` の中身だけを分野ごとに変えられます。
 
-このため、将来的に:
-
-```text
-PEG literature
-G-quadruplex literature
-membrane catalysis literature
-organometallic catalysis literature
-...
-```
-
-を同じエンジンで処理できます。
+この構成により、分野固有のschemaとpromptを分離したまま、共通のpipelineを再利用できます。
 
 ---
 
-# 20. 現段階でまだ実装していないもの
-
-このpackageは「信頼できる文献evidence databaseを作るところ」までです。
-
-pilot 10報の抽出品質を確認した後、Phase 2として以下を追加するのが安全です。
-
-```text
-08_resolve_openalex.py
-09_build_citation_graph.py
-10_embed_papers.py
-11_build_similarity_graph.py
-12_leiden_cluster.py
-13_cluster_dossier.py
-14_build_chapter_evidence.py
-15_draft_section.py
-16_audit_draft.py
-```
-
-このPhase 2は、今回作った:
-
-```text
-SQLite
-paper_json
-inventory.json
-evidence.json
-human approval
-```
-
-をそのまま入力にできます。
-
----
-
-# 21. 最初に実際に行うコマンド一覧
+# 17. 最初に実際に行うコマンド一覧
 
 ## 一度だけ
 
 ```bash
-cd peg_literature_pipeline
+cd foliosort-workspace
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -910,12 +759,10 @@ PDFを入れた後:
 python scripts/01_make_manifest.py
 ```
 
-`data/manifest.csv` を見てpilot 10報を決定。
-
-例えば:
+特定の論文だけを処理する場合の例:
 
 ```bash
-IDS=P0002,P0005,P0008,P0011,P0017,P0021,P0030,P0042,P0055,P0068
+IDS=P0002,P0005
 
 python scripts/02_grobid_parse.py --ids $IDS
 python scripts/03_tei_to_json.py --ids $IDS
@@ -927,15 +774,15 @@ python scripts/07_review_report.py --ids $IDS
 
 review reportをPDFと比較します。
 
-品質が十分なら:
+すべての対象を処理する場合:
 
 ```bash
 python run_pipeline.py
 ```
 
-で残りを処理します。
+を実行します。currentなstageはskipされ、新規または変更された入力だけが処理されます。
 
-# 22. ライセンス
+# 18. ライセンス
 
 FolioSortは [GNU Affero General Public License v3.0 以降](LICENSE) (AGPL-3.0-or-later) で配布されます。
 

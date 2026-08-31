@@ -3,7 +3,7 @@ set -Eeuo pipefail
 ROOT="${REVIEW_ROOT:-$HOME/desktop/review}"
 PORT="${REVIEW_CURATION_PORT:-8765}"
 URL="http://127.0.0.1:$PORT/"
-EXPECTED_VERSION="4.2.2-security-hardening"
+EXPECTED_VERSION="4.3.0-security-hardening"
 PYTHON_BIN="${REVIEW_PYTHON:-$ROOT/.venv/bin/python}"
 mkdir -p "$ROOT/logs"
 health="$(curl -fsS "http://127.0.0.1:$PORT/health" 2>/dev/null || true)"

@@ -58,7 +58,7 @@ from lib.projects import (
 from lib.web_security import browser_request_is_trusted, is_loopback_http_url, read_json_object
 from lib.v4_common import ensure_v4_schema, normalize_ws, valid_doi
 
-APP_VERSION = "4.2.2-security-hardened-network-workspace"
+APP_VERSION = "4.3.0-security-hardened-network-workspace"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -69,14 +69,26 @@ HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 :root[data-theme="light"]{--page:#f4f5f7;--surface:#fff;--surface2:#f0f1f4;--control:#fff;--line:#d5d8df;--line2:#e2e4e9;--text:#202124;--muted:#62666f;--accent:#64748b;--drop:#f8f8fa;--log:#f7f7f9;--primary-bg:#e6ebf2;--primary-border:#c7d0dd;--primary-text:#334155;--danger-bg:#c81e1e;--danger-border:#991b1b;--danger-text:#fff;color-scheme:light}
 body{background:var(--page);color:var(--text);transition:background .15s,color .15s}.card{background:var(--surface);border-color:var(--line)}.muted,.hint{color:var(--muted)}button,.btn,input,select{background:var(--control);color:var(--text);border-color:var(--line)}.primary{background:var(--primary-bg);border-color:var(--primary-border);color:var(--primary-text)}.danger{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger-text)}.primary:hover,.danger:hover{filter:brightness(1.08)}.drop{background:var(--drop);border-color:var(--line)}.drop.drag{background:var(--surface2)}.metric,.primaryText{background:var(--surface2)}.divider{background:var(--line2)}.libraryList{background:var(--surface);border-color:var(--line2)}.librow{border-color:var(--line2)}.libtitle{color:var(--text)}.log{background:var(--log);color:var(--text);border-color:var(--line2)}
 :root[data-theme="light"] .primary:hover{background:#dce4ee;border-color:#b9c5d4;filter:none}
-.topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}.topbar h1{margin-bottom:5px}.appMeta{display:flex;align-items:center;gap:8px;flex:none}.versionBadge{border:1px solid var(--line);border-radius:999px;padding:7px 10px;font-size:12px;color:var(--muted);white-space:nowrap}.themeToggle{width:auto;white-space:nowrap;padding:8px 11px}.homeGrid{display:grid;grid-template-columns:1fr 1.15fr .75fr;gap:16px;margin-top:18px;align-items:stretch}.homeGrid>.card{height:100%}.homeGrid .results{margin-top:0}.libraryCard,.pipelineCard{margin-top:16px}.pipelineCard .log{min-height:230px;max-height:420px}.results .toolbar{flex-direction:column}.results .toolbar button{width:100%;min-width:0}.projectCard .projectrow{grid-template-columns:1fr 1fr}.projectCard .projectrow select{grid-column:1/-1}.addCard .files{max-height:190px}
+.appHeader{height:76px;background:#111827;color:#fff;border-bottom:1px solid #293548;box-shadow:0 2px 12px rgba(0,0,0,.14)}.headerInner{height:100%;max-width:1320px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:28px}.brandLockup{display:flex;align-items:center;gap:11px;flex:none}.brandIcon{width:46px;height:46px;display:grid;place-items:center;color:#fff}.brandMark{width:46px;height:46px;display:block}.brandName{font-size:25px;font-weight:800;letter-spacing:-.025em}.appTabs{display:flex;align-self:stretch;gap:4px}.appTab{position:relative;border:0;border-radius:0;background:transparent;color:#cbd5e1;padding:0 18px;font-size:15px}.appTab:hover{border-color:transparent;color:#fff;background:rgba(255,255,255,.05)}.appTab[aria-selected="true"]{color:#fff;font-weight:700}.appTab[aria-selected="true"]::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:#fff}.appMeta{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}.versionBadge{border:1px solid rgba(255,255,255,.24);border-radius:999px;padding:7px 10px;font-size:12px;color:#dbe3ee;white-space:nowrap}.appHeader .themeToggle{width:auto;white-space:nowrap;padding:8px 11px;background:#1f2937;color:#fff;border-color:#46556b}.wrap{max-width:1320px;padding:16px 20px 20px}.appView[hidden]{display:none!important}.projectPage{height:calc(100vh - 112px);min-height:590px;display:grid;grid-template-rows:minmax(390px,1fr) clamp(145px,20vh,185px);gap:14px}.homeGrid{display:grid;grid-template-columns:1fr 1.15fr .75fr;gap:14px;margin-top:0;align-items:stretch;min-height:0}.homeGrid>.card{height:100%;min-height:0;overflow:auto}.homeGrid .results{margin-top:0}.projectCard .projectrow{grid-template-columns:1fr 1fr}.projectCard .projectrow select{grid-column:1/-1}.addCard{display:flex;flex-direction:column}.addCard .drop{padding:22px 18px}.addCard .files{flex:1;min-height:64px;max-height:145px}.results .toolbar{flex-direction:column}.results .toolbar button{width:100%;min-width:0}.pipelineCard{margin:0;padding:12px 16px;min-height:0;display:flex;flex-direction:column}.pipelineCard h2{margin-bottom:8px}.pipelineCard .log{min-height:0;max-height:none;flex:1;padding:8px}.settingsHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.settingsHeader h1{font-size:22px;margin:0 0 4px}.settingsGrid{display:grid;gap:14px}.settingsGrid .libraryCard,.settingsGrid .referenceCard{margin-top:0}.settingsLower{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,.55fr);gap:14px;align-items:start}.curationSettingsCard .toolbar{margin-top:14px}.curationSettingsCard .toolbar button{width:100%}
 .referenceCard{margin-top:16px}.referenceControls{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(190px,.8fr) auto;gap:8px;margin-top:10px}.referenceNote{width:100%;margin-top:8px}.referenceDetail{margin-top:9px;padding:10px;border:1px solid var(--line2);border-radius:8px;background:var(--surface2);font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto}.referenceDetail.bad{color:var(--text);border-color:#b45353}
-@media(max-width:1000px){.homeGrid{grid-template-columns:1fr 1fr}.results{grid-column:1/-1}.results .toolbar{flex-direction:row}.results .toolbar button{min-width:150px}.topbar{align-items:center}}@media(max-width:700px){.homeGrid{grid-template-columns:1fr}.results{grid-column:auto}.topbar{align-items:flex-start;flex-direction:column}.appMeta{width:100%}.themeToggle{margin-left:auto}.results .toolbar{flex-direction:column}.referenceControls{grid-template-columns:1fr}}
-</style></head><body><div class="wrap">
-<div class="topbar">
-  <div><h1>FolioSort</h1><div class="muted">Local literature workspace for project-scoped PDF analysis, graph generation, curation, and original-PDF access. WSL runs in the background.</div></div>
-  <div class="appMeta"><span class="versionBadge">Version __APP_VERSION__</span><button id="themeToggle" class="themeToggle" type="button">Light mode</button></div>
-</div>
+@media(max-width:1000px){.projectPage{height:auto;min-height:0;display:block}.homeGrid{grid-template-columns:1fr 1fr}.results{grid-column:1/-1}.results .toolbar{flex-direction:row}.results .toolbar button{min-width:150px}.pipelineCard{height:170px;margin-top:14px}.settingsLower{grid-template-columns:1fr}.headerInner{gap:16px}}@media(max-width:700px){.appHeader{height:auto}.headerInner{min-height:76px;padding:10px 14px;gap:8px;flex-wrap:wrap}.brandIcon{width:40px;height:40px}.brandMark{width:40px;height:40px}.brandName{font-size:22px}.appTabs{height:42px;order:3;width:100%}.appTab{flex:1;padding:0 12px}.appMeta{margin-left:auto}.versionBadge{display:none}.wrap{padding:14px}.homeGrid{grid-template-columns:1fr}.results{grid-column:auto}.homeGrid>.card{overflow:visible}.pipelineCard{height:170px}.results .toolbar{flex-direction:column}.referenceControls{grid-template-columns:1fr}.settingsHeader{display:block}}
+</style></head><body>
+<header class="appHeader">
+  <div class="headerInner">
+    <div class="brandLockup" aria-label="FolioSort home">
+      <span class="brandIcon"><svg class="brandMark" viewBox="0 0 64 64" role="img" aria-label="FolioSort"><path d="M18 4h23l10 10v20H18z" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/><path d="M41 4v11h10M25 19h17M25 26h12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M6 25h18l6 7h28v27H6z" fill="currentColor" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M20 47l12-8 12 8M32 39v12" fill="none" stroke="#111827" stroke-width="3" stroke-linecap="round"/><circle cx="20" cy="47" r="3.5" fill="#111827"/><circle cx="32" cy="39" r="3.5" fill="#111827"/><circle cx="44" cy="47" r="3.5" fill="#111827"/><circle cx="32" cy="52" r="3.5" fill="#111827"/></svg></span>
+      <span class="brandName">FolioSort</span>
+    </div>
+    <nav class="appTabs" role="tablist" aria-label="Application sections">
+      <button id="projectTab" class="appTab" type="button" role="tab" aria-controls="projectView" aria-selected="true">Project</button>
+      <button id="settingsTab" class="appTab" type="button" role="tab" aria-controls="settingsView" aria-selected="false">Settings</button>
+    </nav>
+    <div class="appMeta"><span class="versionBadge">Version __APP_VERSION__</span><button id="themeToggle" class="themeToggle" type="button">Light mode</button></div>
+  </div>
+</header>
+<main class="wrap">
+<section id="projectView" class="appView" role="tabpanel" aria-labelledby="projectTab">
+<div class="projectPage">
 <div class="homeGrid">
   <div class="card projectCard">
     <h2>Project</h2>
@@ -95,10 +107,16 @@ body{background:var(--page);color:var(--text);transition:background .15s,color .
   </div>
   <div class="card results">
     <h2>Results</h2>
-    <div class="toolbar"><button id="network">Literature network</button><button id="knowledge">Knowledge graph</button><button id="curation">Curation editor</button></div>
+    <div class="toolbar"><button id="network">Literature network</button><button id="knowledge">Knowledge graph</button></div>
     <div class="hint">Results open only the selected project. Analyze affected projects after changing membership.</div>
   </div>
 </div>
+<div class="card pipelineCard"><h2>Pipeline log</h2><div id="log" class="log">Waiting for status...</div></div>
+</div>
+</section>
+<section id="settingsView" class="appView" role="tabpanel" aria-labelledby="settingsTab" hidden>
+<div class="settingsHeader"><div><h1>Settings</h1><div class="muted">Manage the shared PDF library, reference corrections, and curation tools.</div></div></div>
+<div class="settingsGrid">
 <div class="card libraryCard">
   <h2>Master PDF library</h2><div class="muted">Canonical parent list. Project membership can be changed without moving or deleting the source PDF, extracted text, summaries, embeddings, or curation.</div>
   <div class="libraryControls" style="margin-top:10px"><input id="librarySearch" type="search" placeholder="Search paper ID, author, year, title, journal, DOI, filename…"><select id="libraryFilter"><option value="all">All canonical papers</option><option value="in">In current project</option><option value="out">Not in current project</option></select></div>
@@ -108,20 +126,30 @@ body{background:var(--page);color:var(--text);transition:background .15s,color .
   <div class="libraryTarget"><select id="targetProject"></select><button id="copyTarget">Copy to target</button><button id="moveTarget">Move to target</button></div>
   <div id="libraryMsg" class="hint">Removing from a project never deletes the canonical PDF. “Move” means add membership to the target project and remove membership from the current project.</div>
 </div>
-<div class="card referenceCard">
-  <h2>Manual reference DOI</h2>
-  <div class="muted">References rejected by Crossref/OpenAlex can be corrected here. Choose the failed citation—not the citing paper itself—and enter its DOI. The override is preserved and used on the next Analyze/update without free-text API search. OCR/body text mistakenly extracted as a reference is now skipped automatically; leave it without a DOI unless it is a real citation.</div>
-  <div class="referenceControls"><select id="referenceIssue"></select><input id="referenceDoi" placeholder="10.xxxx/suffix"><button id="saveReferenceDoi" class="primary">Save DOI override</button></div>
-  <input id="referenceNote" class="referenceNote" placeholder="Optional note or source for this correction">
-  <div id="referenceDetail" class="referenceDetail muted">Loading reference-resolution issues…</div>
-  <div id="referenceMsg" class="hint">After saving, run Analyze/update. Existing external results are reused, so only new or corrected references require external lookup.</div>
+<div class="settingsLower">
+  <div class="card referenceCard">
+    <h2>Manual reference DOI</h2>
+    <div class="muted">References rejected by Crossref/OpenAlex can be corrected here. Choose the failed citation—not the citing paper itself—and enter its DOI. The override is preserved and used on the next Analyze/update without free-text API search. OCR/body text mistakenly extracted as a reference is now skipped automatically; leave it without a DOI unless it is a real citation.</div>
+    <div class="referenceControls"><select id="referenceIssue"></select><input id="referenceDoi" placeholder="10.xxxx/suffix"><button id="saveReferenceDoi" class="primary">Save DOI override</button></div>
+    <input id="referenceNote" class="referenceNote" placeholder="Optional note or source for this correction">
+    <div id="referenceDetail" class="referenceDetail muted">Loading reference-resolution issues…</div>
+    <div id="referenceMsg" class="hint">After saving, run Analyze/update. Existing external results are reused, so only new or corrected references require external lookup.</div>
+  </div>
+  <div class="card curationSettingsCard">
+    <h2>Curation editor</h2>
+    <div class="muted">Review and correct generated paper metadata and analysis in the dedicated curation workspace.</div>
+    <div class="toolbar"><button id="curation">Open curation editor</button></div>
+  </div>
 </div>
-<div class="card pipelineCard"><h2>Pipeline log</h2><div id="log" class="log">Waiting for status...</div></div>
 </div>
+</section>
+</main>
 <script>
 const $=x=>document.getElementById(x),drop=$('drop'),pick=$('pick');let currentProject=localStorage.getItem('foliosort-project')||localStorage.getItem('review-project')||'default';let refreshing=false;let libraryPapers=[];let selectedLibraryPapers=new Set();let projectRows=[];let referenceIssues=[];
 function applyTheme(theme,persist=true){const next=theme==='light'?'light':'dark';document.documentElement.dataset.theme=next;$('themeToggle').textContent=next==='dark'?'Light mode':'Dark mode';$('themeToggle').setAttribute('aria-label',`Switch to ${next==='dark'?'light':'dark'} mode`);if(persist)localStorage.setItem('foliosort-theme',next)}
 $('themeToggle').onclick=()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');applyTheme(document.documentElement.dataset.theme,false);
+function showAppTab(name,persist=true){const next=name==='settings'?'settings':'project';const projectActive=next==='project';$('projectView').hidden=!projectActive;$('settingsView').hidden=projectActive;$('projectTab').setAttribute('aria-selected',String(projectActive));$('settingsTab').setAttribute('aria-selected',String(!projectActive));if(persist)localStorage.setItem('foliosort-tab',next)}
+$('projectTab').onclick=()=>showAppTab('project');$('settingsTab').onclick=()=>showAppTab('settings');showAppTab(localStorage.getItem('foliosort-tab')||'project',false);
 function saveProject(){localStorage.setItem('foliosort-project',currentProject)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function fmtBytes(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
 function yearNum(v){const y=parseInt(v,10);return Number.isFinite(y)&&y>0?y:9999}
@@ -902,7 +930,7 @@ class FolioSortApp:
 
     def start_curation(self) -> str:
         port = int((self.config.get("curation") or {}).get("feedback_port", 8765))
-        expected_version = "4.2.2-security-hardening"
+        expected_version = "4.3.0-security-hardening"
         old_server_running = False
         try:
             import urllib.request

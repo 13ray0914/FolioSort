@@ -10,7 +10,7 @@ The pipeline code is domain-independent as long as a profile preserves these top
 
 To create a new domain:
 
-1. Copy `profiles/peg` to `profiles/my_domain`.
+1. Copy `profiles/_template` to `profiles/my_domain`.
 2. Edit the `systems[].attributes` fields in `inventory.schema.json` for the new domain.
 3. Rewrite the two prompt files with the domain ontology and extraction rules.
 4. Edit `review_checklist.txt`.

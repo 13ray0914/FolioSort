@@ -21,13 +21,13 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertIsNotNone(app_version)
         self.assertIsNotNone(expected)
         self.assertEqual(app_version.group(1), expected.group(1))
-        self.assertTrue(app_version.group(1).startswith("4.2.2-"))
+        self.assertTrue(app_version.group(1).startswith("4.3.0-"))
 
     def test_curation_clients_expect_the_health_version(self) -> None:
         server = self.read("scripts/curation_server.py")
         dashboard = self.read("scripts/review_app_server.py")
         launcher = self.read("scripts/open_curation_gui.sh")
-        expected_version = "4.2.2-security-hardening"
+        expected_version = "4.3.0-security-hardening"
 
         self.assertIn(f'"version": "{expected_version}"', server)
         self.assertIn(f'expected_version = "{expected_version}"', dashboard)
@@ -86,9 +86,26 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertIn('id="themeToggle"', source)
         self.assertIn("foliosort-theme", source)
         self.assertIn("data-theme=\"light\"", source)
+        self.assertIn('class="brandMark"', source)
+        self.assertIn('id="projectTab"', source)
+        self.assertIn('id="settingsTab"', source)
+        self.assertIn('id="projectView"', source)
+        self.assertIn('id="settingsView"', source)
+        self.assertIn("foliosort-tab", source)
         self.assertLess(source.index('class="card projectCard"'), source.index('class="card results"'))
         self.assertLess(source.index('class="card results"'), source.index('class="card pipelineCard"'))
-        self.assertLess(source.index('class="card libraryCard"'), source.index('class="card pipelineCard"'))
+        self.assertLess(source.index('class="card pipelineCard"'), source.index('id="settingsView"'))
+        settings_start = source.index('id="settingsView"')
+        settings_end = source.index("<script>", settings_start)
+        settings = source[settings_start:settings_end]
+        self.assertIn('class="card libraryCard"', settings)
+        self.assertIn('class="card referenceCard"', settings)
+        self.assertIn('id="curation"', settings)
+        results_start = source.index('class="card results"')
+        results_end = source.index('class="card pipelineCard"', results_start)
+        self.assertNotIn('id="curation"', source[results_start:results_end])
+        self.assertIn("grid-template-rows:minmax(390px,1fr) clamp(145px,20vh,185px)", source)
+        self.assertIn(".pipelineCard .log{min-height:0;max-height:none;flex:1", source)
 
     def test_light_theme_action_buttons_use_readable_low_saturation_colors(self) -> None:
         source = self.read("scripts/review_app_server.py")
