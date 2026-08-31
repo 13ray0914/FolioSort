@@ -41,6 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from lib.pipeline_common import connect_db, get_paths, load_config
+from lib.process_estimate import estimate_remaining, historical_phase_seconds
 from lib.projects import (
     DEFAULT_PROJECT_SLUG,
     create_project,
@@ -103,7 +104,7 @@ html{overflow-y:scroll;scrollbar-gutter:stable}body{background:var(--page);color
     <div id="uploadMsg" class="hint">New PDFs are ingested into the canonical library and assigned to the selected project. Exact byte-identical duplicates reuse the existing paper ID.</div>
     <div id="files" class="files"></div>
     <div class="pipelineActions"><button id="analyze" class="primary">Analyze / Update<br>Selected Project</button><button id="stopPipeline" class="danger" disabled>Stop Process</button></div>
-    <div class="statusline"><span id="pipePill" class="pill">Process: checking</span><span id="svcPill" class="pill">FolioSort: ready</span></div>
+    <div class="statusline"><span id="pipePill" class="pill">Process: checking</span><span id="estimatePill" class="pill" title="A rough range based on unfinished analysis and this computer's past processing speed.">Time remaining: shown after Analyze</span><span id="svcPill" class="pill">FolioSort: ready</span></div>
   </div>
   <div class="card results">
     <h2>Results</h2>
@@ -150,6 +151,8 @@ function showAppTab(name,persist=true){const next=name==='settings'?'settings':'
 $('projectTab').onclick=()=>showAppTab('project');$('settingsTab').onclick=()=>showAppTab('settings');showAppTab(localStorage.getItem('foliosort-tab')||'project',false);
 function saveProject(){localStorage.setItem('foliosort-project',currentProject)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function fmtBytes(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
+function fmtDuration(seconds){let value=Math.max(0,Math.round(Number(seconds)||0));if(value<90)return `${Math.max(1,Math.round(value/60))} min`;if(value<5400)return `${Math.round(value/60)} min`;if(value<172800){const hours=Math.floor(value/3600),minutes=Math.round((value%3600)/60);return minutes?`${hours} hr ${minutes} min`:`${hours} hr`}const days=Math.floor(value/86400),hours=Math.round((value%86400)/3600);return hours?`${days} d ${hours} hr`:`${days} d`}
+function renderEstimate(status){const pill=$('estimatePill'),estimate=status.process_estimate;if(!status.pipeline_running){pill.textContent='Time remaining: shown after Analyze';pill.className='pill';pill.title="A rough range based on unfinished analysis and this computer's past processing speed.";return}if(!estimate){pill.textContent='Time remaining: calculating…';pill.className='pill busy';pill.title='Waiting for enough Process log information to calculate an estimate.';return}pill.textContent=`Time remaining: about ${fmtDuration(estimate.remaining_low_seconds)}–${fmtDuration(estimate.remaining_high_seconds)}`;pill.className='pill busy';const progress=estimate.active_papers?` · Step ${estimate.step}/11: ${estimate.observed_papers}/${estimate.active_papers} papers observed`: ` · Step ${estimate.step}/11`;const warning=estimate.provider_warning?' External service errors are widening this range.':'';pill.title=`Estimated from unfinished local analysis and past timings on this computer${progress}.${warning}`}
 function yearNum(v){const y=parseInt(v,10);return Number.isFinite(y)&&y>0?y:9999}
 async function jsonFetch(url,opt={}){const r=await fetch(url,opt);const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j}
 function purl(path){return path+(path.includes('?')?'&':'?')+'project='+encodeURIComponent(currentProject)}
@@ -169,10 +172,10 @@ $('librarySearch').addEventListener('input',renderLibrary);$('libraryFilter').ad
 $('project').addEventListener('change',async()=>{currentProject=$('project').value;saveProject();selectedLibraryPapers.clear();await refresh();await refreshLibrary();await refreshReferenceIssues()});
 $('newProject').onclick=async()=>{const name=prompt('New project name');if(!name)return;try{const j=await jsonFetch('/api/create_project?name='+encodeURIComponent(name),{method:'POST'});currentProject=j.project_slug;saveProject();await refresh();await refreshLibrary();$('uploadMsg').textContent=`Project created: ${j.name}`}catch(e){alert(e)}};
 $('renameProject').onclick=async()=>{const selected=$('project').selectedOptions[0];const name=prompt('New display name for this project',selected?selected.textContent.replace(/\s*\(\d+\)\s*$/,''):'');if(!name)return;try{await jsonFetch('/api/rename_project?project='+encodeURIComponent(currentProject)+'&name='+encodeURIComponent(name),{method:'POST'});await refresh();await refreshLibrary()}catch(e){alert(e)}};
-$('analyze').onclick=async()=>{try{const j=await jsonFetch(purl('/api/analyze'),{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not start process: '+e}};
+$('analyze').onclick=async()=>{$('estimatePill').textContent='Time remaining: calculating…';$('estimatePill').className='pill busy';try{const j=await jsonFetch(purl('/api/analyze'),{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not start process: '+e;await refresh()}};
 $('stopPipeline').onclick=async()=>{if(!confirm('Stop the running process? Completed outputs will be kept.'))return;$('stopPipeline').disabled=true;$('uploadMsg').textContent='Stopping process...';try{const j=await jsonFetch('/api/stop_pipeline',{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not stop process: '+e;await refresh()}};
 $('network').onclick=()=>window.open(purl('/network'),'_blank');$('knowledge').onclick=()=>window.open(purl('/knowledge'),'_blank');$('curation').onclick=async()=>{try{await jsonFetch('/api/start_curation',{method:'POST'});window.open('http://127.0.0.1:8765/','_blank')}catch(e){alert(e)}};
-async function refresh(){if(refreshing)return;refreshing=true;try{const j=await jsonFetch(purl('/api/status'));const sel=$('project');projectRows=j.projects||[];if(!projectRows.some(p=>p.project_slug===currentProject)){currentProject=projectRows[0]?.project_slug||'default';saveProject()}sel.innerHTML=projectRows.map(p=>`<option value="${esc(p.project_slug)}" ${p.project_slug===currentProject?'selected':''}>${esc(p.name)} (${p.active_papers})</option>`).join('');populateTargetProjects();$('active').textContent=j.active_papers;$('memory').textContent=j.memory_count;$('networkState').textContent=j.network_stale?'stale':(j.network_ready?'ready':'not yet');$('projectDisplay').textContent=`${j.project_name} · ${currentProject}`;let runText=j.pipeline_running?'running':'idle';if(j.pipeline_running&&j.running_project_name)runText+=` · ${j.running_project_name}`;$('pipePill').textContent='Process: '+runText;$('pipePill').className='pill '+(j.pipeline_running?'busy':'ok');$('stopPipeline').disabled=!j.pipeline_stoppable;$('stopPipeline').title=j.pipeline_running&&!j.pipeline_stoppable?'This process was not started by FolioSort, so FolioSort will not stop an unknown process.':'';$('files').innerHTML=(j.raw_pdfs||[]).slice(-30).reverse().map(f=>`<div class="file">${esc(f.name)} <span class="muted">${fmtBytes(f.size)}</span>${f.paper_id?` <span class="muted">(${esc(f.paper_id)})</span>`:''}</div>`).join('')||'<div class="muted">No PDFs in this project yet.</div>';const visibleLog=(j.log_tail||'No process log yet.').replace(/\bPipeline\b/g,'Process').replace(/\bpipeline\b/g,'process');$('log').textContent=visibleLog;const L=$('log');L.scrollTop=L.scrollHeight;$('svcPill').textContent='FolioSort: ready';$('svcPill').className='pill ok'}catch(e){$('svcPill').textContent='FolioSort: disconnected';$('svcPill').className='pill bad'}finally{refreshing=false}}
+async function refresh(){if(refreshing)return;refreshing=true;try{const j=await jsonFetch(purl('/api/status'));const sel=$('project');projectRows=j.projects||[];if(!projectRows.some(p=>p.project_slug===currentProject)){currentProject=projectRows[0]?.project_slug||'default';saveProject()}sel.innerHTML=projectRows.map(p=>`<option value="${esc(p.project_slug)}" ${p.project_slug===currentProject?'selected':''}>${esc(p.name)} (${p.active_papers})</option>`).join('');populateTargetProjects();$('active').textContent=j.active_papers;$('memory').textContent=j.memory_count;$('networkState').textContent=j.network_stale?'stale':(j.network_ready?'ready':'not yet');$('projectDisplay').textContent=`${j.project_name} · ${currentProject}`;let runText=j.pipeline_running?'running':'idle';if(j.pipeline_running&&j.running_project_name)runText+=` · ${j.running_project_name}`;$('pipePill').textContent='Process: '+runText;$('pipePill').className='pill '+(j.pipeline_running?'busy':'ok');renderEstimate(j);$('stopPipeline').disabled=!j.pipeline_stoppable;$('stopPipeline').title=j.pipeline_running&&!j.pipeline_stoppable?'This process was not started by FolioSort, so FolioSort will not stop an unknown process.':'';$('files').innerHTML=(j.raw_pdfs||[]).slice(-30).reverse().map(f=>`<div class="file">${esc(f.name)} <span class="muted">${fmtBytes(f.size)}</span>${f.paper_id?` <span class="muted">(${esc(f.paper_id)})</span>`:''}</div>`).join('')||'<div class="muted">No PDFs in this project yet.</div>';const visibleLog=(j.log_tail||'No process log yet.').replace(/\bPipeline\b/g,'Process').replace(/\bpipeline\b/g,'process');$('log').textContent=visibleLog;const L=$('log');L.scrollTop=L.scrollHeight;$('svcPill').textContent='FolioSort: ready';$('svcPill').className='pill ok'}catch(e){$('svcPill').textContent='FolioSort: disconnected';$('svcPill').className='pill bad'}finally{refreshing=false}}
 (async()=>{await refresh();await refreshLibrary();await refreshReferenceIssues()})();setInterval(refresh,2500);setInterval(refreshLibrary,15000);setInterval(refreshReferenceIssues,30000);
 </script></body></html>'''.replace("__APP_VERSION__", APP_VERSION.split("-", 1)[0])
 
@@ -192,6 +195,8 @@ class FolioSortApp:
         self.curation_pid_file = self.log_dir / "curation-server.pid"
         self.download_lock = threading.Lock()
         self.pending_downloads: dict[str, tuple[Path, str, float]] = {}
+        self.process_timing_cache_key: tuple[tuple[str, int, int], ...] | None = None
+        self.process_timing_cache: dict[str, float] | None = None
         conn = connect_db(self.paths["database"])
         try:
             ensure_project_schema(conn)
@@ -205,6 +210,12 @@ class FolioSortApp:
         return conn
 
     def pipeline_running(self) -> bool:
+        # On Windows/WSL, the same DrvFs file may be reached through both
+        # /mnt/c/... and a home-directory symlink. Advisory-lock visibility can
+        # differ across those aliases, so prefer the PID FolioSort recorded for
+        # a process it started, then retain the lock check for external runs.
+        if self.owned_pipeline_pid() is not None:
+            return True
         self.pipeline_lock.touch(exist_ok=True)
         with self.pipeline_lock.open("a+") as handle:
             try:
@@ -262,6 +273,60 @@ class FolioSortApp:
             return "\n".join(data[-lines:])
         except OSError:
             return ""
+
+    def process_estimate(self, project_slug: str) -> dict[str, object] | None:
+        """Estimate remaining time from unfinished artifacts and local log history."""
+        normalize_project_slug(project_slug)
+        latest = self.latest_log()
+        if not latest:
+            return None
+        try:
+            current_log = latest.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+
+        # Past log timings change rarely, so cache them rather than re-reading
+        # and re-parsing several files every 2.5-second UI refresh.
+        history_paths = [
+            path
+            for path in sorted(self.log_dir.glob("auto_pipeline_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if path != latest
+        ][:14]
+        history_key = tuple((str(path), path.stat().st_mtime_ns, path.stat().st_size) for path in history_paths)
+        if self.process_timing_cache is None or history_key != self.process_timing_cache_key:
+            history: list[str] = []
+            for path in history_paths:
+                try:
+                    history.append(path.read_text(encoding="utf-8", errors="replace"))
+                except OSError:
+                    continue
+            self.process_timing_cache = historical_phase_seconds(history)
+            self.process_timing_cache_key = history_key
+
+        conn = self.db()
+        try:
+            # Core Steps 2-11 update the shared canonical library before only
+            # the selected project's result pages are rebuilt. Estimate that
+            # actual global workload rather than just project membership.
+            paper_ids = [
+                str(row[0])
+                for row in conn.execute("SELECT paper_id FROM papers WHERE active=1 ORDER BY paper_id").fetchall()
+            ]
+        finally:
+            conn.close()
+        memory_dir = self.paths.get("summary_memory", self.root / "data" / "summary_memory")
+        extracted_dir = self.paths["extracted"]
+        missing_memory = sum(not (memory_dir / f"{paper_id}.memory.json").exists() for paper_id in paper_ids)
+        missing_inventory = sum(not (extracted_dir / f"{paper_id}.inventory.json").exists() for paper_id in paper_ids)
+        missing_evidence = sum(not (extracted_dir / f"{paper_id}.evidence.json").exists() for paper_id in paper_ids)
+        return estimate_remaining(
+            log_text=current_log,
+            typical_seconds=self.process_timing_cache,
+            active_papers=len(paper_ids),
+            missing_memory=missing_memory,
+            missing_inventory=missing_inventory,
+            missing_evidence=missing_evidence,
+        )
 
     def projects(self) -> list[dict[str, Any]]:
         conn = self.db()
@@ -1054,6 +1119,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/status":
             slug = self.project_from_query(parsed)
             running_slug = APP.running_project_slug()
+            process_running = APP.pipeline_running()
             projects = APP.projects()
             current_project_row = next((p for p in projects if p.get("project_slug") == slug), {})
             network_path = project_network_dir(APP.root, slug) / "network.html"
@@ -1067,10 +1133,11 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     network_stale = False
             self.send_json({
-                "pipeline_running": APP.pipeline_running(),
+                "pipeline_running": process_running,
                 "pipeline_stoppable": APP.owned_pipeline_pid() is not None,
                 "running_project": running_slug,
                 "running_project_name": APP.project_name(running_slug) if running_slug else None,
+                "process_estimate": APP.process_estimate(running_slug or slug) if process_running else None,
                 "project_slug": slug,
                 "project_name": APP.project_name(slug),
                 "projects": projects,
