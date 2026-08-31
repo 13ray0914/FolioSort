@@ -17,8 +17,11 @@ ROOT = Path(__file__).resolve().parents[1]
 class PackagingTests(unittest.TestCase):
     def test_version_is_single_sourced_for_package_metadata(self) -> None:
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertEqual(__version__, "4.3.1")
-        self.assertIn(f'version = "{__version__}"', pyproject)
+        # Version is the single source of truth in foliosort/__init__.py.
+        # pyproject.toml must use dynamic version, not a hardcoded duplicate.
+        self.assertIn('dynamic = ["version"]', pyproject)
+        self.assertIn('version = {attr = "foliosort.__version__"}', pyproject)
+        self.assertNotIn(f'version = "{__version__}"', pyproject)
 
     def test_pipeline_cli_accepts_core_stage_options(self) -> None:
         args = build_parser().parse_args(

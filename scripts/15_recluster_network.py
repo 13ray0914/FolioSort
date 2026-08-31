@@ -29,8 +29,9 @@ from lib.network_runtime import (
 )
 from lib.pipeline_common import load_config, read_json, stable_json_hash, write_json
 from lib.projects import normalize_project_slug, project_network_dir
+from foliosort import __version__
 
-SCRIPT_VERSION = "network-recluster-v4.3.1-security-hardened-workspace"
+SCRIPT_VERSION = f"network-recluster-v{__version__}-security-hardened-workspace"
 
 
 def layer_maps(payload: dict[str, Any], selected: set[str]) -> dict[str, dict[tuple[str, str], float]]:

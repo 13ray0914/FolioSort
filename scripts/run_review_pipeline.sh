@@ -35,7 +35,8 @@ fi
 exec > >(tee -a "$LOG") 2>&1
 
 echo
-echo "========== Review process v4.3.1 $(date '+%F %T') =========="
+_FS_VERSION="$(python3 -c 'from foliosort import __version__; print(__version__)' 2>/dev/null || echo "unknown")"
+echo "========== Review process v${_FS_VERSION} $(date '+%F %T') =========="
 echo "Project scope: ${REVIEW_PROJECT:-all papers}"
 cd "$ROOT"
 if [[ -n "$PYTHON_BIN" ]]; then
@@ -147,4 +148,4 @@ if [[ "${REVIEW_SKIP_NETWORKS:-0}" != "1" ]]; then
   scripts/14_build_knowledge_graph.sh || echo "WARNING: knowledge graph stage skipped/failed."
 fi
 
-echo "========== Completed v4.3.1 $(date '+%F %T') project=${REVIEW_PROJECT:-all} =========="
+echo "========== Completed v${_FS_VERSION} $(date '+%F %T') project=${REVIEW_PROJECT:-all} =========="

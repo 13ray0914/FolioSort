@@ -65,7 +65,9 @@ from lib.projects import (
 from lib.web_security import browser_request_is_trusted, is_loopback_http_url, read_json_object
 from lib.v4_common import ensure_v4_schema, make_visual_chunks, normalize_ws, valid_doi
 
-APP_VERSION = "4.3.1-security-hardened-network-workspace"
+from foliosort import __version__
+
+APP_VERSION = f"{__version__}-security-hardened-network-workspace"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1077,7 +1079,7 @@ class FolioSortApp:
 
     def start_curation(self) -> str:
         port = int((self.config.get("curation") or {}).get("feedback_port", 8765))
-        expected_version = "4.3.1-security-hardening"
+        expected_version = f"{__version__}-security-hardening"
         old_server_running = False
         try:
             import urllib.request

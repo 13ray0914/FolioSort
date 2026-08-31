@@ -4,6 +4,8 @@ import re
 import unittest
 from pathlib import Path
 
+from foliosort import __version__
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -15,23 +17,27 @@ class ReleaseConfigurationTests(unittest.TestCase):
     def test_dashboard_launcher_expects_the_server_version(self) -> None:
         server = self.read("scripts/review_app_server.py")
         launcher = self.read("scripts/start_review_app.sh")
-        app_version = re.search(r'^APP_VERSION = "([^"]+)"$', server, re.MULTILINE)
-        expected = re.search(r'^EXPECTED_VERSION="([^"]+)"$', launcher, re.MULTILINE)
+        # APP_VERSION is now an f-string: APP_VERSION = f"{__version__}-<suffix>"
+        app_version = re.search(r'^APP_VERSION = f"\{__version__\}-([^"]+)"$', server, re.MULTILINE)
+        # EXPECTED_VERSION is now: EXPECTED_VERSION="${_BASE_VERSION}-<suffix>"
+        expected = re.search(r'^EXPECTED_VERSION="\$\{_BASE_VERSION\}-([^"]+)"$', launcher, re.MULTILINE)
 
-        self.assertIsNotNone(app_version)
-        self.assertIsNotNone(expected)
+        self.assertIsNotNone(app_version, "APP_VERSION not found as a dynamic f-string in review_app_server.py")
+        self.assertIsNotNone(expected, "EXPECTED_VERSION not found as a dynamic pattern in start_review_app.sh")
+        # Both files must use the same version suffix after the base version
         self.assertEqual(app_version.group(1), expected.group(1))
-        self.assertTrue(app_version.group(1).startswith("4.3.1-"))
 
     def test_curation_clients_expect_the_health_version(self) -> None:
         server = self.read("scripts/curation_server.py")
         dashboard = self.read("scripts/review_app_server.py")
         launcher = self.read("scripts/open_curation_gui.sh")
-        expected_version = "4.3.1-security-hardening"
+        expected_version = f"{__version__}-security-hardening"
 
-        self.assertIn(f'"version": "{expected_version}"', server)
-        self.assertIn(f'expected_version = "{expected_version}"', dashboard)
-        self.assertIn(f'EXPECTED_VERSION="{expected_version}"', launcher)
+        # All three now derive the version dynamically from __version__; verify
+        # the f-string pattern is present rather than a frozen literal.
+        self.assertIn('"version": f"{__version__}-security-hardening"', server)
+        self.assertIn('expected_version = f"{__version__}-security-hardening"', dashboard)
+        self.assertIn('EXPECTED_VERSION="${_BASE_VERSION}-security-hardening"', launcher)
 
     def test_grobid_ports_are_loopback_only(self) -> None:
         compose = self.read("docker-compose.grobid.yml")
