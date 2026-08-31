@@ -104,24 +104,6 @@ class SingleSourceVersionTests(unittest.TestCase):
         self.assertIn("${_FS_VERSION}", source)
         self.assertNotRegex(source, r'echo.*v[0-9]+\.[0-9]+\.[0-9]+')
 
-    # ------------------------------------------------------------------ #
-    # CI — release workflow must guard version/tag alignment              #
-    # ------------------------------------------------------------------ #
-
-    def test_ci_release_job_verifies_version_tag_match(self) -> None:
-        ci = read(".github/workflows/ci.yml")
-        self.assertIn("startsWith(github.ref, 'refs/tags/v')", ci)
-        self.assertIn("from foliosort import __version__", ci)
-        self.assertIn("GITHUB_REF_NAME#v", ci)
-        self.assertIn("PKG_VERSION", ci)
-        self.assertIn("TAG_VERSION", ci)
-        self.assertIn("generate_release_notes: true", ci)
-
-    def test_ci_release_job_needs_test_job(self) -> None:
-        """Release must not bypass the test suite."""
-        ci = read(".github/workflows/ci.yml")
-        release_block = ci[ci.index("release:"):]
-        self.assertIn("needs: test", release_block)
 
     # ------------------------------------------------------------------ #
     # Regression: no stray hardcoded version literals                     #

@@ -69,6 +69,9 @@ jobs:
           python scripts/14_build_knowledge_graph.py --help
           python scripts/15_recluster_network.py --help
 
+  # Runs ONLY when a vX.Y.Z tag is pushed AND that tag is on main.
+  # Tagging a commit on a feature branch (before merging) will fail the
+  # "Verify tag is on main" step and produce no release.
   release:
     name: Publish GitHub Release
     needs: test
@@ -76,11 +79,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write   # needed to create GitHub Releases
+      contents: write
 
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # need full history to check ancestry
+
+      - name: Verify tag is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "ERROR: tag $GITHUB_REF_NAME points to a commit that is not"
+            echo "       on the main branch. Merge the PR first, then retag."
+            exit 1
+          fi
+          echo "Ancestry check passed: $GITHUB_SHA is on origin/main"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
