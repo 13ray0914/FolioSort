@@ -19,6 +19,64 @@ PDF追加
 
 ---
 
+## pipでインストールする
+
+FolioSortはWSL2/UbuntuまたはLinuxのPython 3.10以上へ、GitHubから直接pip installできます。POSIXのプロセス制御とファイルロックを使用するため、WindowsネイティブPythonではなくWSL/Linux内で実行してください。
+
+```bash
+python3 -m venv ~/.venvs/foliosort
+source ~/.venvs/foliosort/bin/activate
+python -m pip install --upgrade pip
+python -m pip install "foliosort @ git+https://github.com/13ray0914/FolioSort.git@main"
+
+foliosort --version
+foliosort init ~/desktop/review
+cd ~/desktop/review
+```
+
+`foliosort init`は実行用workspaceを作り、`config.example.json`から`config.json`を生成します。既存workspaceのapplication部分だけを更新する場合は、upgrade後に次を実行します。研究data、生成物、既存の`config.json`は保持されます。
+
+```bash
+foliosort init ~/desktop/review --force
+```
+
+graph用の分離環境とGROBIDを準備し、Qwenを起動・設定した後に確認して起動します。
+
+```bash
+./scripts/install_network_env.sh
+docker compose -f docker-compose.grobid.yml up -d
+foliosort check
+foliosort serve
+```
+
+browserで `http://127.0.0.1:8766` を開きます。core pipelineだけを直接実行する場合は、たとえば `foliosort pipeline --from-step 6 --to-step 11` を使用できます。開発用のlocal checkoutでは `python -m pip install -e .` も利用できます。
+
+### ローカルQwen実行環境
+
+現在の自動起動設定は、Qwen3.8-27B Q4_K_M（約17GB）とQ4_0 MTP draft（約1.6GB）、GPU全層offload、Flash Attention、1 slot、65,536 token contextを使用します。[Qwen公式model card](https://huggingface.co/Qwen/Qwen3.8-27B)では27B dense model、native context 262,144 tokenとされていますが、FolioSortはmemoryを抑えるため65,536 tokenに設定しています。
+
+| 項目 | 現在の既定構成の実用上の最低 | 推奨 | 補足 |
+|---|---:|---:|---|
+| GPU | CUDA対応NVIDIA GPU | 新しい世代のNVIDIA GPU | CPUのみ、または一部CPU offloadも可能ですが、解析は大幅に遅くなります。 |
+| VRAM | 24GB | 32GB以上 | RTX 4090での実測は約23.3/24.0GiBでした。画面表示や他process用の余裕を考えると32GB以上が安全です。 |
+| RAM | 32GB | 64GB以上 | CPU offload、別のlocal model、大量のPDFを同時に扱う場合は64GB以上を推奨します。 |
+| 空き容量 | 25GB（llama.cppと2つのGGUF） | 40GB以上＋論文/output用領域 | GROBID、embedding、抽出画像、backupには追加容量が必要です。 |
+| CPU | AVX2対応x86-64、8 core | 12 core以上 | PDF解析、検証、graph生成、CPU offloadに使用します。 |
+
+必要量はGGUF量子化、llama.cppの版、context長、KV cache形式、batch size、GPUの画面使用量で変化します。24GBで不足する場合は、まず他のGPU applicationを終了し、その後 `scripts/run_review_pipeline.sh` の `-c 65536` を `-c 32768` に下げてください。それより短くすると、長い論文のrequestが収まらない場合があります。
+
+modelや実行fileの場所は環境変数で変更できます。
+
+```bash
+export QWEN_SERVER="$HOME/desktop/llm/llama.cpp/build/bin/llama-server"
+export QWEN_MODEL="$HOME/models/Qwen3.8-27B/Qwen3.8-27B-Q4_K_M.gguf"
+export QWEN_DRAFT_MODEL="$HOME/models/Qwen3.8-27B/mtp-Qwen3.8-27B-Q4_0.gguf"
+```
+
+Qwenのweight、GGUF、llama.cpp、Docker自体はFolioSortのpip packageには含まれません。
+
+---
+
 ## 0. なぜこの構成にしているか
 
 大量論文のレビューで最も危険なのは、「LLMが読みやすい要約を作ったが、その一文が元論文のどこに書いてあったか追えない」状態です。

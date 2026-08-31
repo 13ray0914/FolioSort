@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ROOT="${REVIEW_ROOT:-$HOME/desktop/review}"
 VENV="${REVIEW_VENV:-$ROOT/.venv}"
+PYTHON_BIN="${REVIEW_PYTHON:-}"
 QWEN_SERVER="${QWEN_SERVER:-$HOME/desktop/llm/llama.cpp/build/bin/llama-server}"
 QWEN_MODEL="${QWEN_MODEL:-$HOME/models/Qwen3.8-27B/Qwen3.8-27B-Q4_K_M.gguf}"
 QWEN_DRAFT_MODEL="${QWEN_DRAFT_MODEL:-$HOME/models/Qwen3.8-27B/mtp-Qwen3.8-27B-Q4_0.gguf}"
@@ -37,14 +38,19 @@ echo
 echo "========== Review pipeline v4.2.2 $(date '+%F %T') =========="
 echo "Project scope: ${REVIEW_PROJECT:-all papers}"
 cd "$ROOT"
-if [[ ! -f "$VENV/bin/activate" ]]; then
-  echo "ERROR: virtualenv not found: $VENV"
-  exit 2
+if [[ -n "$PYTHON_BIN" ]]; then
+  [[ -x "$PYTHON_BIN" ]] || { echo "ERROR: REVIEW_PYTHON is not executable: $PYTHON_BIN"; exit 2; }
+else
+  if [[ ! -f "$VENV/bin/activate" ]]; then
+    echo "ERROR: virtualenv not found: $VENV"
+    exit 2
+  fi
+  # shellcheck disable=SC1090
+  source "$VENV/bin/activate"
+  PYTHON_BIN="$(command -v python)"
 fi
-# shellcheck disable=SC1090
-source "$VENV/bin/activate"
 
-python - <<'PYCFG'
+"$PYTHON_BIN" - <<'PYCFG'
 import json
 from pathlib import Path
 c=json.loads(Path('config.json').read_text(encoding='utf-8'))
@@ -120,14 +126,14 @@ ensure_grobid
 ensure_qwen
 
 echo "--- Scan raw_pdfs and update stable IDs ---"
-python -u scripts/01_make_manifest.py
+"$PYTHON_BIN" -u scripts/01_make_manifest.py
 
 echo "--- Run resumable v4 stages 2-11 ---"
-python -u run_pipeline.py --from-step 2 --to-step 11
+"$PYTHON_BIN" -u run_pipeline.py --from-step 2 --to-step 11
 
 echo "--- Controlled vocabulary + human curation overlay ---"
-python -u scripts/11b_apply_curation.py
-python -u scripts/16_curation_audit.py || echo "WARNING: curation audit failed; curated data itself is still available."
+"$PYTHON_BIN" -u scripts/11b_apply_curation.py
+"$PYTHON_BIN" -u scripts/16_curation_audit.py || echo "WARNING: curation audit failed; curated data itself is still available."
 
 if [[ "${REVIEW_SKIP_EMBEDDINGS:-0}" != "1" ]]; then
   echo "--- Incremental SPECTER2 embeddings ---"

@@ -12,6 +12,8 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+build/
+dist/
 
 # Local configuration / secrets
 config.json

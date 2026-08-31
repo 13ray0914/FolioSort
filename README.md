@@ -65,9 +65,68 @@ PDFs
 
 Optional components include SPECTER2, MinerU, and a separate multimodal llama.cpp server for visual interpretation.
 
+### Local Qwen hardware requirements
+
+The automatic launcher is tuned for **Qwen3.8-27B Q4_K_M** with the Q4_0 MTP draft model, full GPU offload, one request slot, Flash Attention, and a 65,536-token context. The two GGUF files used by the current default are approximately 17 GB and 1.6 GB. Qwen's official model card describes the model as a 27B dense model with a native 262,144-token context; FolioSort deliberately uses a smaller context to control memory use. See the [official Qwen3.8-27B model card](https://huggingface.co/Qwen/Qwen3.8-27B) and [llama.cpp server options](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
+
+| Resource | Practical minimum for the default | Recommended | Notes |
+|---|---:|---:|---|
+| GPU | NVIDIA CUDA-capable GPU | Recent NVIDIA GPU | CPU-only and partial-offload execution are possible in llama.cpp but are much slower for this pipeline. |
+| VRAM | 24 GB | 32 GB or more | The tested RTX 4090 run used about 23.3/24.0 GiB. Other llama.cpp builds and display use can require extra headroom. |
+| System RAM | 32 GB | 64 GB or more | Use at least 64 GB when partially offloading to CPU, running other local models, or processing many large PDFs. |
+| Free disk | 25 GB for llama.cpp and the two GGUF files | 40 GB or more plus PDF/output space | FolioSort research data, GROBID images, embeddings, and backups need additional space. |
+| CPU | Modern x86-64 CPU with AVX2, 8 cores | 12+ cores | CPU is used for parsing, validation, graph construction, and any layers not offloaded to the GPU. |
+
+These figures are deployment guidance, not a guarantee: model quantization, context length, llama.cpp revision, KV-cache type, batch size, and GPU display usage all change memory consumption. The default `-c 65536` reserves substantially more cache than a shorter context. If 24 GB VRAM is insufficient, first stop other GPU applications, then try `-c 32768`; reducing it further can reject FolioSort's longer requests. Changing the launcher command requires editing `scripts/run_review_pipeline.sh`.
+
+The launcher reads these environment variables, so custom locations do not require editing source files:
+
+```bash
+export QWEN_SERVER="$HOME/desktop/llm/llama.cpp/build/bin/llama-server"
+export QWEN_MODEL="$HOME/models/Qwen3.8-27B/Qwen3.8-27B-Q4_K_M.gguf"
+export QWEN_DRAFT_MODEL="$HOME/models/Qwen3.8-27B/mtp-Qwen3.8-27B-Q4_0.gguf"
+```
+
+The Qwen weights and llama.cpp binary are not installed by the FolioSort Python package.
+
+## Install with pip
+
+FolioSort is installable directly from its Git repository. Use a dedicated virtual environment inside WSL/Linux; the Windows-native Python runtime is not supported because the service launchers use POSIX process and locking facilities.
+
+```bash
+python3 -m venv ~/.venvs/foliosort
+source ~/.venvs/foliosort/bin/activate
+python -m pip install --upgrade pip
+python -m pip install "foliosort @ git+https://github.com/13ray0914/FolioSort.git@main"
+
+foliosort --version
+foliosort init ~/desktop/review
+cd ~/desktop/review
+```
+
+`foliosort init` writes the application files and creates `config.json` from the example. It does not bundle Qwen, llama.cpp, Docker, or GROBID. To refresh an existing pip-created workspace after upgrading, run `foliosort init ~/desktop/review --force`; generated data and the existing `config.json` are preserved.
+
+Install the optional isolated graph environment and start GROBID:
+
+```bash
+./scripts/install_network_env.sh
+docker compose -f docker-compose.grobid.yml up -d
+```
+
+After configuring/starting Qwen, verify and serve FolioSort:
+
+```bash
+foliosort check
+foliosort serve
+```
+
+The server stays in the foreground and is available at [http://127.0.0.1:8766](http://127.0.0.1:8766). The `Analyze` button inherits the pip environment used by `foliosort serve`. The core stages can also be run directly with, for example, `foliosort pipeline --from-step 6 --to-step 11`.
+
+For development from a local checkout, use `python -m pip install -e .` instead of the Git URL.
+
 ## Quick start
 
-The commands below use the default WSL workspace expected by the launcher scripts.
+The clone-based setup remains available for development or source inspection. The commands below use the default WSL workspace expected by the launcher scripts.
 
 ```bash
 git clone https://github.com/13ray0914/FolioSort.git ~/desktop/review

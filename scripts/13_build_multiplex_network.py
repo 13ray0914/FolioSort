@@ -1301,7 +1301,7 @@ def main() -> None:
     # pipeline. Failure is non-fatal: technical frequency labels remain usable.
     naming_cfg = cfg.get("cluster_naming", {})
     if project_slug and bool(naming_cfg.get("enabled", True)) and bool(naming_cfg.get("auto_after_build", True)):
-        naming_python = root / ".venv" / "bin" / "python"
+        naming_python = Path(os.environ.get("REVIEW_PYTHON") or (root / ".venv" / "bin" / "python"))
         naming_script = root / "scripts" / "17_name_clusters.py"
         if naming_python.exists() and naming_script.exists():
             naming_request = {

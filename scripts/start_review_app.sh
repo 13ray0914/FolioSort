@@ -4,6 +4,7 @@ ROOT="${REVIEW_ROOT:-$HOME/desktop/review}"
 PORT="${REVIEW_APP_PORT:-8766}"
 URL="http://127.0.0.1:${PORT}/"
 EXPECTED_VERSION="4.2.2-security-hardened-network-workspace"
+PYTHON_BIN="${REVIEW_PYTHON:-$ROOT/.venv/bin/python}"
 mkdir -p "$ROOT/logs"
 
 health="$(curl -fsS "${URL}health" 2>/dev/null || true)"
@@ -15,7 +16,8 @@ else
     "$ROOT/scripts/stop_review_app.sh" >/dev/null 2>&1 || true
     sleep 0.5
   fi
-  nohup "$ROOT/.venv/bin/python" "$ROOT/scripts/review_app_server.py" \
+  [[ -x "$PYTHON_BIN" ]] || { echo "ERROR: Python is not executable: $PYTHON_BIN"; exit 2; }
+  nohup "$PYTHON_BIN" "$ROOT/scripts/review_app_server.py" \
     --host 127.0.0.1 --port "$PORT" \
     > "$ROOT/logs/review-app.log" 2>&1 &
   echo $! > "$ROOT/logs/review-app.pid"

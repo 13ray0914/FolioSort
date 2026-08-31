@@ -763,7 +763,7 @@ class FolioSortApp:
         network_json = project_network_dir(self.root, slug) / "network.json"
         if not network_json.exists():
             raise FileNotFoundError(f"Literature Network has not been generated for project {slug}")
-        python = self.root / ".venv" / "bin" / "python"
+        python = Path(os.environ.get("REVIEW_PYTHON") or (self.root / ".venv" / "bin" / "python"))
         script = self.root / "scripts" / "17_name_clusters.py"
         cmd = [str(python), str(script), "--project", slug]
         if force:
@@ -849,7 +849,12 @@ class FolioSortApp:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
-            env={**os.environ, "REVIEW_ROOT": str(self.root), "REVIEW_PROJECT": slug},
+            env={
+                **os.environ,
+                "REVIEW_ROOT": str(self.root),
+                "REVIEW_PROJECT": slug,
+                "REVIEW_PYTHON": os.environ.get("REVIEW_PYTHON") or sys.executable,
+            },
         )
         self.pipeline_pid_file.write_text(str(proc.pid) + "\n", encoding="utf-8")
         self.pipeline_project_file.write_text(slug + "\n", encoding="utf-8")

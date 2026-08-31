@@ -1,0 +1,17 @@
+include setup.py
+include check_environment.py
+include config.example.json
+include config.v4.defaults.json
+include config.v4_1.defaults.json
+include docker-compose.grobid.yml
+include network_config.json
+include requirements*.txt
+include run_pipeline.py
+recursive-include assets *
+recursive-include lib *.py
+recursive-include profiles *
+recursive-include prompts *
+recursive-include schemas *
+recursive-include scripts *.py *.sh
+recursive-include windows *
+global-exclude __pycache__ *.py[cod]
