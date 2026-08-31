@@ -54,8 +54,9 @@ from lib.v4_common import normalize_doi, normalize_openalex_id, normalize_title
 from lib.projects import ensure_project_schema, normalize_project_slug, project_name, project_network_dir, project_rows
 from lib.network_runtime import LAYER_COLORS, compute_layout_positions
 from lib.web_security import html_script_json
+from foliosort import __version__
 
-SCRIPT_VERSION = "multiplex-network-v4.3.1-security-hardened-workspace"
+SCRIPT_VERSION = f"multiplex-network-v{__version__}-security-hardened-workspace"
 
 
 def first_author_family(authors: list[Any] | None) -> str:

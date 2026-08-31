@@ -40,7 +40,7 @@ from lib.curation import (
 )
 from lib.pipeline_common import connect_db, get_paths, load_config, read_json
 from lib.web_security import browser_request_is_trusted, is_loopback_http_url, read_json_object
-
+from foliosort import __version__
 
 MAX_JSON_BODY_BYTES = 1024 * 1024
 
@@ -350,7 +350,7 @@ APP: App | None = None
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "LiteratureCuration/4.3.1"
+    server_version = f"LiteratureCuration/{__version__}"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         sys.stderr.write("CURATION %s - %s\n" % (self.address_string(), fmt % args))
@@ -402,7 +402,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         if parsed.path == "/health":
-            self.send_json({"ok": True, "version": "4.3.1-security-hardening"})
+            self.send_json({"ok": True, "version": f"{__version__}-security-hardening"})
             return
         if parsed.path == "/api/papers":
             self.send_json({"papers": APP.paper_summaries()})

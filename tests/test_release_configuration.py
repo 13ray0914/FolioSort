@@ -4,6 +4,8 @@ import re
 import unittest
 from pathlib import Path
 
+from foliosort import __version__
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,17 +23,19 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertIsNotNone(app_version)
         self.assertIsNotNone(expected)
         self.assertEqual(app_version.group(1), expected.group(1))
-        self.assertTrue(app_version.group(1).startswith("4.3.1-"))
+        self.assertTrue(app_version.group(1).startswith(f"{__version__}-"))
 
     def test_curation_clients_expect_the_health_version(self) -> None:
         server = self.read("scripts/curation_server.py")
         dashboard = self.read("scripts/review_app_server.py")
         launcher = self.read("scripts/open_curation_gui.sh")
-        expected_version = "4.3.1-security-hardening"
+        expected_version = f"{__version__}-security-hardening"
 
-        self.assertIn(f'"version": "{expected_version}"', server)
-        self.assertIn(f'expected_version = "{expected_version}"', dashboard)
-        self.assertIn(f'EXPECTED_VERSION="{expected_version}"', launcher)
+        # All three now derive the version dynamically from __version__; verify
+        # the f-string pattern is present rather than a frozen literal.
+        self.assertIn('"version": f"{__version__}-security-hardening"', server)
+        self.assertIn('expected_version = f"{__version__}-security-hardening"', dashboard)
+        self.assertIn('EXPECTED_VERSION="${_BASE_VERSION}-security-hardening"', launcher)
 
     def test_grobid_ports_are_loopback_only(self) -> None:
         compose = self.read("docker-compose.grobid.yml")
