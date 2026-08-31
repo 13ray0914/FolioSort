@@ -21,13 +21,13 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertIsNotNone(app_version)
         self.assertIsNotNone(expected)
         self.assertEqual(app_version.group(1), expected.group(1))
-        self.assertTrue(app_version.group(1).startswith("4.3.0-"))
+        self.assertTrue(app_version.group(1).startswith("4.3.1-"))
 
     def test_curation_clients_expect_the_health_version(self) -> None:
         server = self.read("scripts/curation_server.py")
         dashboard = self.read("scripts/review_app_server.py")
         launcher = self.read("scripts/open_curation_gui.sh")
-        expected_version = "4.3.0-security-hardening"
+        expected_version = "4.3.1-security-hardening"
 
         self.assertIn(f'"version": "{expected_version}"', server)
         self.assertIn(f'expected_version = "{expected_version}"', dashboard)
@@ -88,6 +88,8 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertIn("data-theme=\"light\"", source)
         self.assertIn('class="brandMark"', source)
         self.assertIn('id="projectTab"', source)
+        self.assertIn('aria-selected="true">Home</button>', source)
+        self.assertIn(".appTab{position:relative;width:96px", source)
         self.assertIn('id="settingsTab"', source)
         self.assertIn('id="projectView"', source)
         self.assertIn('id="settingsView"', source)

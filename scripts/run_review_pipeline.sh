@@ -35,7 +35,7 @@ fi
 exec > >(tee -a "$LOG") 2>&1
 
 echo
-echo "========== Review process v4.3.0 $(date '+%F %T') =========="
+echo "========== Review process v4.3.1 $(date '+%F %T') =========="
 echo "Project scope: ${REVIEW_PROJECT:-all papers}"
 cd "$ROOT"
 if [[ -n "$PYTHON_BIN" ]]; then
@@ -147,4 +147,4 @@ if [[ "${REVIEW_SKIP_NETWORKS:-0}" != "1" ]]; then
   scripts/14_build_knowledge_graph.sh || echo "WARNING: knowledge graph stage skipped/failed."
 fi
 
-echo "========== Completed v4.3.0 $(date '+%F %T') project=${REVIEW_PROJECT:-all} =========="
+echo "========== Completed v4.3.1 $(date '+%F %T') project=${REVIEW_PROJECT:-all} =========="

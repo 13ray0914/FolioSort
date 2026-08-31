@@ -5,6 +5,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -54,7 +55,10 @@ def main() -> None:
         if number == 10 and args.local_references_only:
             cmd += ["--local-only"]
         print(f"\n=== STEP {number}/11: {label} ({script}) ===", flush=True)
+        started = time.monotonic()
+        print(f"PROCESS-STEP-START step={number}", flush=True)
         result = subprocess.run(cmd, cwd=ROOT, env=env)
+        print(f"PROCESS-STEP-DONE step={number} seconds={time.monotonic() - started:.1f}", flush=True)
         if result.returncode != 0:
             raise SystemExit(result.returncode)
 

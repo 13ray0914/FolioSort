@@ -3,7 +3,7 @@ set -Eeuo pipefail
 ROOT="${REVIEW_ROOT:-$HOME/desktop/review}"
 PORT="${REVIEW_APP_PORT:-8766}"
 URL="http://127.0.0.1:${PORT}/"
-EXPECTED_VERSION="4.3.0-security-hardened-network-workspace"
+EXPECTED_VERSION="4.3.1-security-hardened-network-workspace"
 PYTHON_BIN="${REVIEW_PYTHON:-$ROOT/.venv/bin/python}"
 mkdir -p "$ROOT/logs"
 

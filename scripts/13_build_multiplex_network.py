@@ -55,7 +55,7 @@ from lib.projects import ensure_project_schema, normalize_project_slug, project_
 from lib.network_runtime import LAYER_COLORS, compute_layout_positions
 from lib.web_security import html_script_json
 
-SCRIPT_VERSION = "multiplex-network-v4.3.0-security-hardened-workspace"
+SCRIPT_VERSION = "multiplex-network-v4.3.1-security-hardened-workspace"
 
 
 def first_author_family(authors: list[Any] | None) -> str:

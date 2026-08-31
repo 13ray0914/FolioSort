@@ -40,8 +40,14 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from lib.pipeline_common import connect_db, get_paths, load_config
-from lib.process_estimate import estimate_remaining, historical_phase_seconds
+from lib.pipeline_common import connect_db, get_paths, load_config, make_text_chunks, read_json
+from lib.process_estimate import (
+    blocked_paper_ids,
+    estimate_remaining,
+    fit_call_time_models,
+    historical_phase_seconds,
+    historical_step_seconds,
+)
 from lib.projects import (
     DEFAULT_PROJECT_SLUG,
     create_project,
@@ -57,9 +63,9 @@ from lib.projects import (
     set_project_membership_batch,
 )
 from lib.web_security import browser_request_is_trusted, is_loopback_http_url, read_json_object
-from lib.v4_common import ensure_v4_schema, normalize_ws, valid_doi
+from lib.v4_common import ensure_v4_schema, make_visual_chunks, normalize_ws, valid_doi
 
-APP_VERSION = "4.3.0-security-hardened-network-workspace"
+APP_VERSION = "4.3.1-security-hardened-network-workspace"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -70,9 +76,9 @@ HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 :root[data-theme="light"]{--page:#f4f5f7;--surface:#fff;--surface2:#f0f1f4;--control:#fff;--line:#d5d8df;--line2:#e2e4e9;--text:#202124;--muted:#62666f;--accent:#64748b;--drop:#f8f8fa;--log:#f7f7f9;--primary-bg:#e6ebf2;--primary-border:#c7d0dd;--primary-text:#334155;--danger-bg:#c81e1e;--danger-border:#991b1b;--danger-text:#fff;color-scheme:light}
 html{overflow-y:scroll;scrollbar-gutter:stable}body{background:var(--page);color:var(--text);transition:background .15s,color .15s}.card{background:var(--surface);border-color:var(--line)}.muted,.hint{color:var(--muted)}button,.btn,input,select{background:var(--control);color:var(--text);border-color:var(--line)}.primary{background:var(--primary-bg);border-color:var(--primary-border);color:var(--primary-text)}.danger{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger-text)}.primary:hover,.danger:hover{filter:brightness(1.08)}.drop{background:var(--drop);border-color:var(--line)}.drop.drag{background:var(--surface2)}.metric,.primaryText{background:var(--surface2)}.divider{background:var(--line2)}.libraryList{background:var(--surface);border-color:var(--line2)}.librow{border-color:var(--line2)}.libtitle{color:var(--text)}.log{background:var(--log);color:var(--text);border-color:var(--line2)}
 :root[data-theme="light"] .primary:hover{background:#dce4ee;border-color:#b9c5d4;filter:none}
-.appHeader{height:76px;background:#111827;color:#fff;border-bottom:1px solid #293548;box-shadow:0 2px 12px rgba(0,0,0,.14)}.headerInner{height:100%;max-width:1320px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:28px}.brandLockup{display:flex;align-items:center;gap:11px;flex:none}.brandIcon{width:46px;height:46px;display:grid;place-items:center;color:#fff}.brandMark{width:46px;height:46px;display:block}.brandName{font-size:25px;font-weight:800;letter-spacing:-.025em}.appTabs{display:flex;align-self:stretch;gap:4px}.appTab{position:relative;border:0;border-radius:0;background:transparent;color:#cbd5e1;padding:0 18px;font-size:15px}.appTab:hover{border-color:transparent;color:#fff;background:rgba(255,255,255,.05)}.appTab[aria-selected="true"]{color:#fff;font-weight:700}.appTab[aria-selected="true"]::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:#fff}.appMeta{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}.versionBadge{border:1px solid rgba(255,255,255,.24);border-radius:999px;padding:7px 10px;font-size:12px;color:#dbe3ee;white-space:nowrap}.appHeader .themeToggle{width:auto;white-space:nowrap;padding:8px 11px;background:#1f2937;color:#fff;border-color:#46556b}.wrap{max-width:1320px;padding:16px 20px 20px}.appView[hidden]{display:none!important}.projectPage{height:calc(100vh - 112px);min-height:590px;display:grid;grid-template-rows:minmax(390px,1fr) clamp(145px,20vh,185px);gap:14px}.homeGrid{display:grid;grid-template-columns:1fr 1.15fr .75fr;gap:14px;margin-top:0;align-items:stretch;min-height:0}.homeGrid>.card{height:100%;min-height:0;overflow:auto}.homeGrid .results{margin-top:0}.projectCard .projectrow{grid-template-columns:1fr 1fr}.projectCard .projectrow select{grid-column:1/-1}.addCard{display:flex;flex-direction:column}.addCard .drop{padding:22px 18px}.addCard .files{flex:1;min-height:64px;max-height:145px}.pipelineActions button{flex:1 1 0;min-width:0}.results .toolbar{flex-direction:column}.results .toolbar button{width:100%;min-width:0}.pipelineCard{margin:0;padding:12px 16px;min-height:0;display:flex;flex-direction:column}.pipelineCard h2{margin-bottom:8px}.pipelineCard .log{min-height:0;max-height:none;flex:1;padding:8px}.settingsHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.settingsHeader h1{font-size:22px;margin:0 0 4px}.settingsGrid{display:grid;gap:14px}.settingsGrid .libraryCard,.settingsGrid .referenceCard,.settingsGrid .curationSettingsCard{margin-top:0}.curationSettingsCard .toolbar{margin-top:14px}.curationSettingsCard .toolbar button{width:100%}
+.appHeader{height:76px;background:#111827;color:#fff;border-bottom:1px solid #293548;box-shadow:0 2px 12px rgba(0,0,0,.14)}.headerInner{height:100%;max-width:1320px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:28px}.brandLockup{display:flex;align-items:center;gap:11px;flex:none}.brandIcon{width:46px;height:46px;display:grid;place-items:center;color:#fff}.brandMark{width:46px;height:46px;display:block}.brandName{font-size:25px;font-weight:800;letter-spacing:-.025em}.appTabs{display:flex;align-self:stretch;gap:4px}.appTab{position:relative;width:96px;border:0;border-radius:0;background:transparent;color:#cbd5e1;padding:0 12px;font-size:15px}.appTab:hover{border-color:transparent;color:#fff;background:rgba(255,255,255,.05)}.appTab[aria-selected="true"]{color:#fff;font-weight:700}.appTab[aria-selected="true"]::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:#fff}.appMeta{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}.versionBadge{border:1px solid rgba(255,255,255,.24);border-radius:999px;padding:7px 10px;font-size:12px;color:#dbe3ee;white-space:nowrap}.appHeader .themeToggle{width:auto;white-space:nowrap;padding:8px 11px;background:#1f2937;color:#fff;border-color:#46556b}.wrap{max-width:1320px;padding:16px 20px 20px}.appView[hidden]{display:none!important}.projectPage{height:calc(100vh - 112px);min-height:590px;display:grid;grid-template-rows:minmax(390px,1fr) clamp(145px,20vh,185px);gap:14px}.homeGrid{display:grid;grid-template-columns:1fr 1.15fr .75fr;gap:14px;margin-top:0;align-items:stretch;min-height:0}.homeGrid>.card{height:100%;min-height:0;overflow:auto}.homeGrid .results{margin-top:0}.projectCard .projectrow{grid-template-columns:1fr 1fr}.projectCard .projectrow select{grid-column:1/-1}.addCard{display:flex;flex-direction:column}.addCard .drop{padding:22px 18px}.addCard .files{flex:1;min-height:64px;max-height:145px}.pipelineActions button{flex:1 1 0;min-width:0}.results .toolbar{flex-direction:column}.results .toolbar button{width:100%;min-width:0}.pipelineCard{margin:0;padding:12px 16px;min-height:0;display:flex;flex-direction:column}.pipelineCard h2{margin-bottom:8px}.pipelineCard .log{min-height:0;max-height:none;flex:1;padding:8px}.settingsHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.settingsHeader h1{font-size:22px;margin:0 0 4px}.settingsGrid{display:grid;gap:14px}.settingsGrid .libraryCard,.settingsGrid .referenceCard,.settingsGrid .curationSettingsCard{margin-top:0}.curationSettingsCard .toolbar{margin-top:14px}.curationSettingsCard .toolbar button{width:100%}
 .referenceCard{margin-top:16px}.referenceControls{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(190px,.8fr) auto;gap:8px;margin-top:10px}.referenceNote{width:100%;margin-top:8px}.referenceDetail{margin-top:9px;padding:10px;border:1px solid var(--line2);border-radius:8px;background:var(--surface2);font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto}.referenceDetail.bad{color:var(--text);border-color:#b45353}
-@media(max-width:1000px){.projectPage{height:auto;min-height:0;display:block}.homeGrid{grid-template-columns:1fr 1fr}.results{grid-column:1/-1}.results .toolbar{flex-direction:row}.results .toolbar button{min-width:150px}.pipelineCard{height:170px;margin-top:14px}.headerInner{gap:16px}}@media(max-width:700px){.appHeader{height:auto}.headerInner{min-height:76px;padding:10px 14px;gap:8px;flex-wrap:wrap}.brandIcon{width:40px;height:40px}.brandMark{width:40px;height:40px}.brandName{font-size:22px}.appTabs{height:42px;order:3;width:100%}.appTab{flex:1;padding:0 12px}.appMeta{margin-left:auto}.versionBadge{display:none}.wrap{padding:14px}.homeGrid{grid-template-columns:1fr}.results{grid-column:auto}.homeGrid>.card{overflow:visible}.pipelineCard{height:170px}.results .toolbar{flex-direction:column}.referenceControls{grid-template-columns:1fr}.settingsHeader{display:block}}
+@media(max-width:1000px){.projectPage{height:auto;min-height:0;display:block}.homeGrid{grid-template-columns:1fr 1fr}.results{grid-column:1/-1}.results .toolbar{flex-direction:row}.results .toolbar button{min-width:150px}.pipelineCard{height:170px;margin-top:14px}.headerInner{gap:16px}}@media(max-width:700px){.appHeader{height:auto}.headerInner{min-height:76px;padding:10px 14px;gap:8px;flex-wrap:wrap}.brandIcon{width:40px;height:40px}.brandMark{width:40px;height:40px}.brandName{font-size:22px}.appTabs{height:42px;order:3;width:100%}.appTab{flex:1;width:auto;padding:0 12px}.appMeta{margin-left:auto}.versionBadge{display:none}.wrap{padding:14px}.homeGrid{grid-template-columns:1fr}.results{grid-column:auto}.homeGrid>.card{overflow:visible}.pipelineCard{height:170px}.results .toolbar{flex-direction:column}.referenceControls{grid-template-columns:1fr}.settingsHeader{display:block}}
 </style></head><body>
 <header class="appHeader">
   <div class="headerInner">
@@ -81,7 +87,7 @@ html{overflow-y:scroll;scrollbar-gutter:stable}body{background:var(--page);color
       <span class="brandName">FolioSort</span>
     </div>
     <nav class="appTabs" role="tablist" aria-label="Application sections">
-      <button id="projectTab" class="appTab" type="button" role="tab" aria-controls="projectView" aria-selected="true">Project</button>
+      <button id="projectTab" class="appTab" type="button" role="tab" aria-controls="projectView" aria-selected="true">Home</button>
       <button id="settingsTab" class="appTab" type="button" role="tab" aria-controls="settingsView" aria-selected="false">Settings</button>
     </nav>
     <div class="appMeta"><span class="versionBadge">Version __APP_VERSION__</span><button id="themeToggle" class="themeToggle" type="button">Light mode</button></div>
@@ -152,7 +158,7 @@ $('projectTab').onclick=()=>showAppTab('project');$('settingsTab').onclick=()=>s
 function saveProject(){localStorage.setItem('foliosort-project',currentProject)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function fmtBytes(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
 function fmtDuration(seconds){let value=Math.max(0,Math.round(Number(seconds)||0));if(value<90)return `${Math.max(1,Math.round(value/60))} min`;if(value<5400)return `${Math.round(value/60)} min`;if(value<172800){const hours=Math.floor(value/3600),minutes=Math.round((value%3600)/60);return minutes?`${hours} hr ${minutes} min`:`${hours} hr`}const days=Math.floor(value/86400),hours=Math.round((value%86400)/3600);return hours?`${days} d ${hours} hr`:`${days} d`}
-function renderEstimate(status){const pill=$('estimatePill'),estimate=status.process_estimate;if(!status.pipeline_running){pill.textContent='Time remaining: shown after Analyze';pill.className='pill';pill.title="A rough range based on unfinished analysis and this computer's past processing speed.";return}if(!estimate){pill.textContent='Time remaining: calculating…';pill.className='pill busy';pill.title='Waiting for enough Process log information to calculate an estimate.';return}pill.textContent=`Time remaining: about ${fmtDuration(estimate.remaining_low_seconds)}–${fmtDuration(estimate.remaining_high_seconds)}`;pill.className='pill busy';const progress=estimate.active_papers?` · Step ${estimate.step}/11: ${estimate.observed_papers}/${estimate.active_papers} papers observed`: ` · Step ${estimate.step}/11`;const warning=estimate.provider_warning?' External service errors are widening this range.':'';pill.title=`Estimated from unfinished local analysis and past timings on this computer${progress}.${warning}`}
+function renderEstimate(status){const pill=$('estimatePill'),estimate=status.process_estimate;if(!status.pipeline_running){pill.textContent='Time remaining: shown after Analyze';pill.className='pill';pill.title="A prediction learned from unfinished chunks and this computer's processing history.";return}if(!estimate){pill.textContent='Time remaining: calculating…';pill.className='pill busy';pill.title='Waiting for enough Process log information to calculate an estimate.';return}const point=estimate.estimate_seconds??Math.round((estimate.remaining_low_seconds+estimate.remaining_high_seconds)/2),uncertainty=estimate.uncertainty_seconds??Math.round((estimate.remaining_high_seconds-estimate.remaining_low_seconds)/2);pill.textContent=`Time remaining: about ${fmtDuration(point)} (±${fmtDuration(uncertainty)})`;pill.className='pill busy';const progress=estimate.active_papers?` · Step ${estimate.step}/11: ${estimate.observed_papers}/${estimate.active_papers} papers observed`: ` · Step ${estimate.step}/11`;const samples=estimate.model?.training_samples?` · learned from ${estimate.model.training_samples} completed chunk calls`:'';const blocked=estimate.blocked_papers?` · ${estimate.blocked_papers} OCR-required papers excluded`:'';const warning=estimate.provider_warning?' External service errors are increasing uncertainty.':'';pill.title=`Prediction from past local timings and unfinished work${progress}${samples}${blocked}.${warning}`}
 function yearNum(v){const y=parseInt(v,10);return Number.isFinite(y)&&y>0?y:9999}
 async function jsonFetch(url,opt={}){const r=await fetch(url,opt);const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j}
 function purl(path){return path+(path.includes('?')?'&':'?')+'project='+encodeURIComponent(currentProject)}
@@ -197,6 +203,10 @@ class FolioSortApp:
         self.pending_downloads: dict[str, tuple[Path, str, float]] = {}
         self.process_timing_cache_key: tuple[tuple[str, int, int], ...] | None = None
         self.process_timing_cache: dict[str, float] | None = None
+        self.process_step_cache: dict[int, float] | None = None
+        self.call_model_cache_key: tuple[int, str] | None = None
+        self.call_model_cache: dict[str, dict[str, float | int]] | None = None
+        self.analysis_chunk_cache: dict[str, tuple[tuple[int, int, int, int], int]] = {}
         conn = connect_db(self.paths["database"])
         try:
             ensure_project_schema(conn)
@@ -301,6 +311,7 @@ class FolioSortApp:
                 except OSError:
                     continue
             self.process_timing_cache = historical_phase_seconds(history)
+            self.process_step_cache = historical_step_seconds(history)
             self.process_timing_cache_key = history_key
 
         conn = self.db()
@@ -314,19 +325,92 @@ class FolioSortApp:
             ]
         finally:
             conn.close()
+        blocked_ids = blocked_paper_ids(current_log)
+        eligible_ids = [paper_id for paper_id in paper_ids if paper_id not in blocked_ids]
         memory_dir = self.paths.get("summary_memory", self.root / "data" / "summary_memory")
         extracted_dir = self.paths["extracted"]
-        missing_memory = sum(not (memory_dir / f"{paper_id}.memory.json").exists() for paper_id in paper_ids)
-        missing_inventory = sum(not (extracted_dir / f"{paper_id}.inventory.json").exists() for paper_id in paper_ids)
-        missing_evidence = sum(not (extracted_dir / f"{paper_id}.evidence.json").exists() for paper_id in paper_ids)
+        missing_memory_ids = [paper_id for paper_id in eligible_ids if not (memory_dir / f"{paper_id}.memory.json").exists()]
+        missing_inventory_ids = [paper_id for paper_id in eligible_ids if not (extracted_dir / f"{paper_id}.inventory.json").exists()]
+        missing_evidence_ids = [paper_id for paper_id in eligible_ids if not (extracted_dir / f"{paper_id}.evidence.json").exists()]
+        pending_chunks = {
+            "inventory": sum(self.analysis_chunk_count(paper_id) for paper_id in missing_inventory_ids),
+            "evidence": sum(self.analysis_chunk_count(paper_id) for paper_id in missing_evidence_ids),
+        }
         return estimate_remaining(
             log_text=current_log,
             typical_seconds=self.process_timing_cache,
             active_papers=len(paper_ids),
-            missing_memory=missing_memory,
-            missing_inventory=missing_inventory,
-            missing_evidence=missing_evidence,
+            missing_memory=len(missing_memory_ids),
+            missing_inventory=len(missing_inventory_ids),
+            missing_evidence=len(missing_evidence_ids),
+            pending_chunks=pending_chunks,
+            call_models=self.process_call_models(),
+            learned_step_seconds=self.process_step_cache,
+            blocked_count=len(blocked_ids),
         )
+
+    def analysis_chunk_count(self, paper_id: str) -> int:
+        paper_path = self.paths["paper_json"] / f"{paper_id}.json"
+        visual_dir = self.paths.get("visual_analysis", self.root / "data" / "visual_analysis")
+        visual_path = visual_dir / f"{paper_id}.visual.json"
+        if not paper_path.exists():
+            return 0
+        paper_stat = paper_path.stat()
+        visual_stat = visual_path.stat() if visual_path.exists() else None
+        key = (
+            paper_stat.st_mtime_ns,
+            paper_stat.st_size,
+            visual_stat.st_mtime_ns if visual_stat else 0,
+            visual_stat.st_size if visual_stat else 0,
+        )
+        cached = self.analysis_chunk_cache.get(paper_id)
+        if cached and cached[0] == key:
+            return cached[1]
+        try:
+            paper = read_json(paper_path)
+            visual = read_json(visual_path) if visual_path.exists() else {}
+            count = len(
+                make_text_chunks(
+                    paper,
+                    max_chars=int(self.config["llm"].get("chunk_max_chars", 12000)),
+                    include_abstract=True,
+                )
+            ) + len(
+                make_visual_chunks(
+                    visual,
+                    max_chars=int(self.config.get("visual", {}).get("visual_chunk_max_chars", 8000)),
+                )
+            )
+        except (OSError, ValueError, TypeError, KeyError):
+            count = 0
+        self.analysis_chunk_cache[paper_id] = (key, count)
+        return count
+
+    def process_call_models(self) -> dict[str, dict[str, float | int]]:
+        conn = self.db()
+        try:
+            key_row = conn.execute(
+                "SELECT COUNT(*), COALESCE(MAX(finished_at),'') FROM llm_runs WHERE finished_at IS NOT NULL"
+            ).fetchone()
+            key = (int(key_row[0]), str(key_row[1]))
+            if self.call_model_cache is not None and key == self.call_model_cache_key:
+                return self.call_model_cache
+            rows = conn.execute(
+                """
+                SELECT stage,status,
+                       MAX(0.0,(julianday(finished_at)-julianday(started_at))*86400.0) AS seconds
+                FROM llm_runs
+                WHERE finished_at IS NOT NULL
+                  AND stage IN ('extract_inventory_v4','extract_evidence_v4')
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+        self.call_model_cache = fit_call_time_models(
+            (str(row["stage"]), str(row["status"]), float(row["seconds"])) for row in rows
+        )
+        self.call_model_cache_key = key
+        return self.call_model_cache
 
     def projects(self) -> list[dict[str, Any]]:
         conn = self.db()
@@ -993,7 +1077,7 @@ class FolioSortApp:
 
     def start_curation(self) -> str:
         port = int((self.config.get("curation") or {}).get("feedback_port", 8765))
-        expected_version = "4.3.0-security-hardening"
+        expected_version = "4.3.1-security-hardening"
         old_server_running = False
         try:
             import urllib.request

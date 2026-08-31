@@ -50,7 +50,7 @@ from lib.projects import ensure_project_schema, normalize_project_slug, project_
 from lib.v4_common import ensure_v4_schema, now_iso
 from lib.web_security import html_script_json
 
-SCRIPT_VERSION = "knowledge-graph-v4.3.0-security-hardened"
+SCRIPT_VERSION = "knowledge-graph-v4.3.1-security-hardened"
 
 
 def first_author_family(authors: list[Any] | None) -> str:
