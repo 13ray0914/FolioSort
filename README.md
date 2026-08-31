@@ -93,6 +93,8 @@ The Qwen weights and llama.cpp binary are not installed by the FolioSort Python 
 
 FolioSort is installable directly from its Git repository. Use a dedicated virtual environment inside WSL/Linux; the Windows-native Python runtime is not supported because the service launchers use POSIX process and locking facilities.
 
+Before initialization, create a free [OpenAlex account and API key](https://openalex.org/settings/api). OpenAlex's keyless daily budget is intended only for casual use and can stop a multi-paper metadata update with `429 Too Many Requests`; a free key raises the daily budget. See the official [OpenAlex authentication and rate-limit guide](https://help.openalex.org/api/authentication/).
+
 ```bash
 python3 -m venv ~/.venvs/foliosort
 source ~/.venvs/foliosort/bin/activate
@@ -104,7 +106,17 @@ foliosort init ~/desktop/review
 cd ~/desktop/review
 ```
 
-`foliosort init` writes the application files and creates `config.json` from the example. It does not bundle Qwen, llama.cpp, Docker, or GROBID. To refresh an existing pip-created workspace after upgrading, run `foliosort init ~/desktop/review --force`; generated data and the existing `config.json` are preserved.
+During `foliosort init`, paste the OpenAlex API key at the hidden prompt:
+
+```text
+Create a free OpenAlex account and copy your API key:
+  https://openalex.org/settings/api
+OpenAlex API key (input hidden; Enter to configure later):
+```
+
+The key is stored only in the local, Git-ignored `config.json` and is never printed. `foliosort init` writes the application files and creates `config.json` from the example. It does not bundle Qwen, llama.cpp, Docker, or GROBID. To refresh an existing pip-created workspace after upgrading, run `foliosort init ~/desktop/review --force`; generated data, the existing `config.json`, and its API key are preserved.
+
+For unattended installation, use `foliosort init PATH --no-openalex-prompt` and provide `OPENALEX_API_KEY` in the environment that runs `foliosort serve`.
 
 Install the optional isolated graph environment and start GROBID:
 

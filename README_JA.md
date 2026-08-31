@@ -23,6 +23,8 @@ PDF追加
 
 FolioSortはWSL2/UbuntuまたはLinuxのPython 3.10以上へ、GitHubから直接pip installできます。POSIXのプロセス制御とファイルロックを使用するため、WindowsネイティブPythonではなくWSL/Linux内で実行してください。
 
+最初に[OpenAlexの設定ページ](https://openalex.org/settings/api)で無料アカウントを作成し、API keyを取得してください。keyなしで利用できる1日あたりの上限は少なく、多数の論文を処理すると`429 Too Many Requests`でmetadata取得が止まることがあります。無料API keyを使うと1日の利用枠が増えます。詳細は[OpenAlex公式の認証・rate limitガイド](https://help.openalex.org/api/authentication/)を参照してください。
+
 ```bash
 python3 -m venv ~/.venvs/foliosort
 source ~/.venvs/foliosort/bin/activate
@@ -34,11 +36,21 @@ foliosort init ~/desktop/review
 cd ~/desktop/review
 ```
 
-`foliosort init`は実行用workspaceを作り、`config.example.json`から`config.json`を生成します。既存workspaceのapplication部分だけを更新する場合は、upgrade後に次を実行します。研究data、生成物、既存の`config.json`は保持されます。
+`foliosort init`の途中で、取得したOpenAlex API keyを入力します。入力内容は画面に表示されません。
+
+```text
+Create a free OpenAlex account and copy your API key:
+  https://openalex.org/settings/api
+OpenAlex API key (input hidden; Enter to configure later):
+```
+
+API keyはGitの管理対象外であるlocalの`config.json`だけに保存され、logや画面には出力されません。`foliosort init`は実行用workspaceを作り、`config.example.json`から`config.json`を生成します。既存workspaceのapplication部分だけを更新する場合は、upgrade後に次を実行します。研究data、生成物、既存の`config.json`、保存済みAPI keyは保持されます。
 
 ```bash
 foliosort init ~/desktop/review --force
 ```
+
+自動構築など対話入力できない環境では、`foliosort init PATH --no-openalex-prompt`を使用し、`foliosort serve`を実行する環境に`OPENALEX_API_KEY`を設定してください。
 
 graph用の分離環境とGROBIDを準備し、Qwenを起動・設定した後に確認して起動します。
 

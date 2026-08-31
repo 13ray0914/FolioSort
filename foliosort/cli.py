@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import getpass
+import json
 import os
 import shutil
 import stat
@@ -64,6 +66,35 @@ def _runtime_environment(path: Path) -> dict[str, str]:
     return env
 
 
+def _configure_openalex(config_path: Path, *, prompt: bool) -> bool:
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    openalex = config.setdefault("metadata_enrichment", {}).setdefault("openalex", {})
+    if str(openalex.get("api_key") or "").strip():
+        try:
+            config_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass
+        print("OpenAlex API key: already configured (preserved)")
+        return True
+    if not prompt or not sys.stdin.isatty():
+        print("OpenAlex API key: not configured. Set it in config.json or export OPENALEX_API_KEY before serving.")
+        return False
+    print("Create a free OpenAlex account and copy your API key:")
+    print("  https://openalex.org/settings/api")
+    api_key = getpass.getpass("OpenAlex API key (input hidden; Enter to configure later): ").strip()
+    if not api_key:
+        print("OpenAlex API key was not saved. Add it before running a large metadata update.")
+        return False
+    openalex["api_key"] = api_key
+    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        config_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
+    print("OpenAlex API key: saved to the local, Git-ignored config.json")
+    return True
+
+
 def command_init(args: argparse.Namespace) -> int:
     target = _workspace(args.directory)
     if target.exists() and any(target.iterdir()) and not args.force:
@@ -82,6 +113,7 @@ def command_init(args: argparse.Namespace) -> int:
     config = target / "config.json"
     if not config.exists():
         shutil.copy2(target / "config.example.json", config)
+    _configure_openalex(config, prompt=not getattr(args, "no_openalex_prompt", False))
     for directory in ("data", "db", "logs", "outputs", "backups"):
         (target / directory).mkdir(exist_ok=True)
     for script in (target / "scripts").glob("*.sh"):
@@ -145,6 +177,11 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser = subparsers.add_parser("init", help="create or refresh a runnable workspace")
     init_parser.add_argument("directory", nargs="?", default="foliosort-workspace")
     init_parser.add_argument("--force", action="store_true", help="refresh bundled application files in a non-empty workspace")
+    init_parser.add_argument(
+        "--no-openalex-prompt",
+        action="store_true",
+        help="skip the interactive OpenAlex API key prompt (for unattended setup)",
+    )
     init_parser.set_defaults(handler=command_init)
 
     check_parser = subparsers.add_parser("check", help="check required services and Python dependencies")
