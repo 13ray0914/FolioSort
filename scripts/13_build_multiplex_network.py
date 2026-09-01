@@ -657,9 +657,7 @@ html,body,#network{background:var(--network-page);color:var(--network-text)}#sid
 <div id="network"></div><div id="splitter" role="separator" aria-orientation="vertical" tabindex="0" title="Drag to resize the network / controls split. Double-click to reset. Use Left/Right arrow keys for fine adjustment."></div><div id="status">Loading network…</div>
 <div id="side">
   <h2>Multiplex Network</h2>
-  <div class="muted"><b>Project:</b> __PROJECT_LABEL__<br>
-    Leiden clustering uses the complete selected layers. The canvas uses a sparse maximum-spanning-forest + strongest-neighbor backbone so visualization settings do not discard edges from clustering.<br><span class="muted">Drag the vertical ⋮ handle to resize the canvas and controls. Right-drag the graph vertically to rotate it; right-drag horizontally to change zoom.</span>
-  </div>
+  <div class="muted"><b>Project:</b> __PROJECT_LABEL__</div>
 
   <details class="section" data-section="find">
     <summary><span>Find paper and cluster</span><span class="sectionHint">search · sort · focus</span></summary>

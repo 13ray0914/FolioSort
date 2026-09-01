@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/13ray0914/FolioSort/actions/workflows/ci.yml/badge.svg)](https://github.com/13ray0914/FolioSort/actions/workflows/ci.yml)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.3.2-8b5cf6.svg)](https://github.com/13ray0914/FolioSort/releases)
+[![Version](https://img.shields.io/badge/version-4.3.3-8b5cf6.svg)](https://github.com/13ray0914/FolioSort/releases)
 
 FolioSort is a local-first, evidence-traceable literature review workspace. It turns a collection of scientific PDFs into structured claims, measurements, review reports, literature networks, and a scientific knowledge graph while preserving links back to the source sentences and visual evidence.
 
