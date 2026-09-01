@@ -89,6 +89,17 @@ export QWEN_DRAFT_MODEL="$HOME/models/Qwen3.8-27B/mtp-Qwen3.8-27B-Q4_0.gguf"
 
 The Qwen weights and llama.cpp binary are not installed by the FolioSort Python package.
 
+## Download a release
+
+Each tagged version is published on the [GitHub Releases page](https://github.com/13ray0914/FolioSort/releases) with versioned, immutable download files:
+
+- `FolioSort-vX.Y.Z-source.zip` and `FolioSort-vX.Y.Z-source.tar.gz` — source snapshots
+- `foliosort-X.Y.Z-py3-none-any.whl` and `foliosort-X.Y.Z.tar.gz` — Python package files
+- `FolioSort-X.Y.Z-setup.exe` — Windows/WSL installer
+- `SHA256SUMS.txt` — checksums for every attached file
+
+The Windows installer sets up the Python package inside an existing Ubuntu/WSL distribution and creates FolioSort shortcuts. Install WSL first with `wsl --install -d Ubuntu` if necessary. The installer preserves the WSL workspace, PDFs, results, and local configuration when FolioSort is upgraded or uninstalled. It does not install Docker/GROBID, Qwen, llama.cpp, GPU drivers, or model weights. The current installer is not code-signed, so Windows SmartScreen may require **More info → Run anyway** after you verify the SHA-256 checksum.
+
 ## Install with pip
 
 FolioSort is installable directly from its Git repository. Use a dedicated virtual environment inside WSL/Linux; the Windows-native Python runtime is not supported because the service launchers use POSIX process and locking facilities.

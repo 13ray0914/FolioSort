@@ -197,6 +197,27 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertTrue((ROOT / "assets" / "foliosort.ico").exists())
         self.assertTrue((ROOT / "assets" / "foliosort-icon.png").exists())
 
+    def test_tagged_releases_publish_source_archives_and_windows_installer(self) -> None:
+        workflow = self.read(".github/workflows/ci.yml")
+        installer = self.read("windows/installer/FolioSort.iss")
+        install_wsl = self.read("windows/installer/install_wsl.ps1")
+        launcher = self.read("windows/installer/launch_foliosort.ps1")
+        readme = self.read("README.md")
+
+        self.assertIn("windows-installer:", workflow)
+        self.assertIn("runs-on: windows-latest", workflow)
+        self.assertIn("choco install innosetup --version=6.7.3", workflow)
+        self.assertIn('OutputBaseFilename=FolioSort-{#MyVersion}-setup', installer)
+        self.assertIn("FolioSort-v${TAG_VERSION}-source.zip", workflow)
+        self.assertIn("FolioSort-v${TAG_VERSION}-source.tar.gz", workflow)
+        self.assertIn("SHA256SUMS.txt", workflow)
+        self.assertIn("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02", workflow)
+        self.assertIn("actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093", workflow)
+        self.assertIn('wsl.exe -d $distro -- bash -lc $installScript', install_wsl)
+        self.assertIn('bash scripts/start_review_app.sh', launcher)
+        self.assertIn("FolioSort-X.Y.Z-setup.exe", readme)
+        self.assertIn("SHA256SUMS.txt", readme)
+
 
 if __name__ == "__main__":
     unittest.main()
