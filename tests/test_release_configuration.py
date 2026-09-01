@@ -206,7 +206,7 @@ class ReleaseConfigurationTests(unittest.TestCase):
 
         self.assertIn("windows-installer:", workflow)
         self.assertIn("runs-on: windows-latest", workflow)
-        self.assertIn("choco install innosetup --version=6.7.3", workflow)
+        self.assertIn("choco install innosetup --version=6.7.1", workflow)
         self.assertIn('OutputBaseFilename=FolioSort-{#MyVersion}-setup', installer)
         self.assertIn("FolioSort-v${TAG_VERSION}-source.zip", workflow)
         self.assertIn("FolioSort-v${TAG_VERSION}-source.tar.gz", workflow)
