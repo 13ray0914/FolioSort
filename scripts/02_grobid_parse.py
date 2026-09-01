@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -13,19 +14,41 @@ sys.path.insert(0, str(ROOT))
 
 from lib.pipeline_common import (
     connect_db,
+    get_stage,
     get_paths,
     load_config,
     parse_ids,
     retry_request,
     select_papers,
     set_stage,
+    sha256_file,
     sha256_text,
     stable_json_hash,
     stage_is_current,
 )
 
 STAGE = "grobid_parse"
-PARSER_VERSION = "grobid-v4.1-image-only-diagnostic"
+PARSER_VERSION = "grobid-v4.3-ocr-derivative-aware"
+
+
+def preferred_pdf(conn, row, root: Path, raw_pdf: Path) -> tuple[Path, bool]:
+    """Use a verified OCR derivative without ever replacing the canonical PDF."""
+    stage = get_stage(conn, str(row["paper_id"]), "ocr")
+    if not stage or stage["status"] != "success" or not stage["output_path"]:
+        return raw_pdf, False
+    try:
+        meta = json.loads(stage["meta_json"] or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return raw_pdf, False
+    candidate = Path(str(stage["output_path"])).resolve()
+    expected_dir = (root / "data" / "ocr_pdfs").resolve()
+    if (
+        candidate.parent != expected_dir
+        or not candidate.is_file()
+        or str(meta.get("source_sha256") or "") != str(row["source_sha256"])
+    ):
+        return raw_pdf, False
+    return candidate, True
 
 
 def image_only_pdf_diagnostic(pdf_path: Path, *, sample_pages: int = 5) -> str | None:
@@ -98,18 +121,20 @@ def main() -> None:
 
     for row in rows:
         paper_id = row["paper_id"]
-        pdf_path = paths["raw_pdfs"] / row["source_relpath"]
+        raw_pdf_path = paths["raw_pdfs"] / row["source_relpath"]
+        pdf_path, using_ocr = preferred_pdf(conn, row, root, raw_pdf_path)
         out_path = paths["tei"] / f"{paper_id}.tei.xml"
-        input_hash = sha256_text(row["source_sha256"] + parser_signature)
+        input_hash = sha256_text(sha256_file(pdf_path) + parser_signature)
 
         if not args.force and stage_is_current(conn, paper_id, STAGE, input_hash, out_path):
             print(f"SKIP    {paper_id} already current")
             continue
 
-        print(f"GROBID  {paper_id}  {row['original_filename']}")
+        source_label = "verified OCR derivative" if using_ocr else row["original_filename"]
+        print(f"GROBID  {paper_id}  {source_label}")
         set_stage(conn, paper_id, STAGE, "running", input_hash=input_hash)
         try:
-            if bool(grobid.get("detect_image_only_pdfs", True)):
+            if not using_ocr and bool(grobid.get("detect_image_only_pdfs", True)):
                 diagnostic = image_only_pdf_diagnostic(
                     pdf_path,
                     sample_pages=int(grobid.get("image_only_sample_pages", 5)),

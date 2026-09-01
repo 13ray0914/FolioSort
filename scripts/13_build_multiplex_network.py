@@ -598,7 +598,13 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
     for node in payload["nodes"]:
         cluster_id = int(node["cluster_id"])
         color = color_by_cluster.get(cluster_id, "#8b5cf6")
-        border = "#f59e0b" if node.get("validation_status") == "review_required" else "#d1d5db"
+        human_review = str(node.get("human_review") or "")
+        if human_review == "approved":
+            border = "#22c55e"
+        elif human_review == "rejected":
+            border = "#ef4444"
+        else:
+            border = "#f59e0b" if node.get("validation_status") == "review_required" else "#d1d5db"
         pos = positions.get(node["paper_id"]) or {}
         vis_nodes.append(
             {
@@ -612,10 +618,11 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
                 "color": {
                     "background": color,
                     "border": border,
-                    "highlight": {"background": "#ffffff", "border": color},
+                    "highlight": {"background": "#fef08a", "border": "#ffffff"},
                 },
                 "font": {"color": "#e5e7eb", "size": 13},
                 "borderWidth": 1.4,
+                "borderWidthSelected": 5,
             }
         )
 
@@ -625,7 +632,8 @@ def make_gui(out_path: Path, payload: dict[str, Any], local_vis_js: Path | None)
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Multiplex Literature Network</title>
+<title>Multiplex Network</title>
+<script>try{const q=new URLSearchParams(location.search).get('theme');const saved=localStorage.getItem('foliosort-theme');document.documentElement.dataset.theme=q==='light'||q==='dark'?q:(saved||'dark')}catch(_error){document.documentElement.dataset.theme='dark'}</script>
 <script src="__VIS_JS__"></script>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;color:#e5e7eb;font-family:Inter,Segoe UI,Arial,sans-serif}
@@ -639,14 +647,18 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;col
 h2{font-size:18px;margin:0 0 12px}.muted{color:#9ca3af;font-size:12px;line-height:1.45}.section{border-top:1px solid #333;margin-top:10px}.section summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 2px;font-size:13px;font-weight:700;color:#e5e7eb;user-select:none}.section summary::-webkit-details-marker{display:none}.section summary::after{content:"+";font-size:17px;color:#a1a1aa;font-weight:400}.section[open] summary::after{content:"−"}.sectionBody{padding:0 0 12px}.section[open]{border-color:#44444c}.section summary:hover{color:#fff}.sectionHint{font-size:10px;color:#8b8b96;font-weight:400;margin-left:auto}
 select,input,button{width:100%;box-sizing:border-box;background:#232326;color:#eee;border:1px solid #3c3c42;border-radius:7px;padding:9px;margin:5px 0}button{cursor:pointer}button:disabled{opacity:.5;cursor:wait}.row{display:flex;gap:7px}.row>*{flex:1}.check{display:flex;align-items:center;gap:7px;font-size:13px;margin:7px 0}.check input{width:auto;margin:0}.swatch{width:10px;height:10px;border-radius:2px;flex:0 0 auto}.badge{display:inline-block;padding:3px 7px;border-radius:12px;background:#2c2c32;margin:2px;font-size:11px}.claim{font-size:12px;line-height:1.45;margin:8px 0;color:#d1d5db}.legend{display:flex;align-items:flex-start;gap:7px;font-size:11px;margin:6px 0}.dot{width:10px;height:10px;border-radius:50%;margin-top:2px;flex:0 0 auto}.openpdf{margin-top:10px;background:#303037;border-color:#5b5b66;font-weight:600}.openpdf:hover{border-color:#a3a3b0}.primary{background:#35354a;border-color:#6666a4;font-weight:650}.secondary{background:#29292e}.compact{font-size:11px;padding:7px}.rangeRow{display:grid;grid-template-columns:1fr 48px;gap:8px;align-items:center}.rangeRow input{margin:0}.help{font-size:11px;color:#a3a3ad;line-height:1.4}.chip{display:inline-block;padding:2px 6px;border-radius:10px;background:#25252a;font-size:10px;color:#b8b8c3;margin:1px}.paperSearchBox{max-height:230px}.paperToolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,.55fr);gap:7px}.clusterPaperList{border:1px solid #303038;border-radius:7px;background:#19191c;max-height:220px;overflow:auto;margin-top:8px}.clusterPaperRow{padding:7px 9px;border-top:1px solid #292930;font-size:11px;line-height:1.4}.clusterPaperRow:first-child{border-top:0}.clusterPaperTitle{font-weight:600;color:#e4e4e7}.downloadRow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:7px}.clusterTextArea{width:100%;height:220px;resize:vertical;background:#151518;color:#e5e7eb;border:1px solid #303038;border-radius:7px;padding:9px;font:11px/1.45 Consolas,monospace;white-space:pre;overflow:auto}.pdfExport{background:#3b2f24;border-color:#765433}.pdfExport:hover{border-color:#d19a5a}body.resizing{cursor:col-resize;user-select:none}#splitter{touch-action:none}.resolutionGuide{margin-top:7px;padding:8px;border-radius:7px;background:#1d1d22;border:1px solid #303038}.resolutionBand{font-size:11px;color:#d4d4d8;margin:2px 0}.legend.clickable{cursor:pointer;padding:3px;border-radius:5px}.legend.clickable:hover{background:#24242a}
 #status{position:absolute;left:12px;bottom:10px;background:rgba(20,20,20,.78);padding:7px 10px;border-radius:7px;font-size:11px;color:#bbb;pointer-events:none;max-width:65vw}
+.highlightActions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.highlightActions button{margin-top:2px}.highlightKey{color:#fde047;font-weight:700}
+:root{--network-page:#151515;--network-side:rgba(22,22,24,.985);--network-control:#232326;--network-line:#3c3c42;--network-line-soft:#303038;--network-text:#e5e7eb;--network-muted:#9ca3af;--network-soft:#19191c;--network-chip:#25252a;--network-panel:#1d1d22;color-scheme:dark}
+:root[data-theme="light"]{--network-page:#f6f7f9;--network-side:rgba(255,255,255,.985);--network-control:#fff;--network-line:#cfd4dc;--network-line-soft:#dde1e7;--network-text:#202124;--network-muted:#5f6670;--network-soft:#f3f4f6;--network-chip:#eceff3;--network-panel:#f1f3f5;color-scheme:light}
+html,body,#network{background:var(--network-page);color:var(--network-text)}#side{background:var(--network-side);color:var(--network-text);box-shadow:-12px 0 28px rgba(0,0,0,.12)}#splitter{background:var(--network-panel);border-color:var(--network-line)}#splitter::after{color:var(--network-muted);text-shadow:none}.muted,.help,.sectionHint{color:var(--network-muted)}.section{border-color:var(--network-line-soft)}.section[open]{border-color:var(--network-line)}.section summary{color:var(--network-text)}.section summary:hover{color:var(--network-text)}select,input,button{background:var(--network-control);color:var(--network-text);border-color:var(--network-line)}.badge,.chip,.secondary{background:var(--network-chip);color:var(--network-text)}.claim,.resolutionBand,.clusterPaperTitle{color:var(--network-text)}.clusterPaperList{background:var(--network-soft);border-color:var(--network-line-soft)}.clusterPaperRow{border-color:var(--network-line-soft)}.clusterTextArea{background:var(--network-soft);color:var(--network-text);border-color:var(--network-line-soft)}.resolutionGuide{background:var(--network-panel);border-color:var(--network-line-soft)}.legend.clickable:hover{background:var(--network-chip)}:root[data-theme="light"] .primary{background:#e6ebf2;border-color:#b9c5d4;color:#334155}:root[data-theme="light"] .openpdf{background:#eef2f6;border-color:#b9c5d4;color:#334155}:root[data-theme="light"] .pdfExport{background:#f8efe5;border-color:#d2ad82;color:#6f481d}:root[data-theme="light"] #status{background:rgba(255,255,255,.88);color:#475569;border:1px solid #d5d9e0}:root[data-theme="light"] .highlightKey{color:#9a6700}#network.rotating{cursor:ns-resize}
 </style>
 </head>
 <body>
 <div id="network"></div><div id="splitter" role="separator" aria-orientation="vertical" tabindex="0" title="Drag to resize the network / controls split. Double-click to reset. Use Left/Right arrow keys for fine adjustment."></div><div id="status">Loading network…</div>
 <div id="side">
-  <h2>Multiplex Literature Network</h2>
+  <h2>Multiplex Network</h2>
   <div class="muted"><b>Project:</b> __PROJECT_LABEL__<br>
-    Leiden clustering uses the complete selected layers. The canvas uses a sparse maximum-spanning-forest + strongest-neighbor backbone so visualization settings do not discard edges from clustering.<br><span class="muted">Drag the vertical ⋮ handle to resize the canvas and controls.</span>
+    Leiden clustering uses the complete selected layers. The canvas uses a sparse maximum-spanning-forest + strongest-neighbor backbone so visualization settings do not discard edges from clustering.<br><span class="muted">Drag the vertical ⋮ handle to resize the canvas and controls. Right-drag the graph vertically to rotate it; right-drag horizontally to change zoom.</span>
   </div>
 
   <details class="section" data-section="find">
@@ -654,9 +666,10 @@ select,input,button{width:100%;box-sizing:border-box;background:#232326;color:#e
     <div class="sectionBody">
       <div class="paperToolbar"><input id="paperQuery" type="search" placeholder="Search author, year, title, journal, DOI, filename, P-ID…"><select id="paperSort"><option value="year_asc" selected>Year: oldest first</option><option value="year_desc">Year: newest first</option><option value="author_asc">First author: A–Z</option><option value="title_asc">Title: A–Z</option></select></div>
       <select id="paperSearch" class="paperSearchBox" size="8"></select>
-      <div class="help">Search is live. Unknown publication years are placed last in both year modes.</div>
+      <div class="highlightActions"><button id="highlightMatches" class="primary">Highlight all matches</button><button id="clearHighlights" class="secondary">Clear highlights</button></div>
+      <div id="highlightInfo" class="help">Search is live. Select one result, or highlight all matching authors/titles. Ctrl/Cmd-click graph nodes to add individual papers.</div>
       <label>Cluster</label><select id="clusterFilter"></select>
-      <div class="row"><button id="fitBtn">Fit</button><button id="relaxBtn">Relax layout</button></div>
+      <div class="row"><button id="fitBtn">Fit</button><button id="relaxBtn" title="Gently reduce node overlap without forcing clusters apart">Relax layout</button></div>
       <button id="resetBtn" class="secondary">Reset view and clusters</button>
     </div>
   </details>
@@ -800,9 +813,14 @@ const network=new vis.Network(document.getElementById('network'),{nodes,edges},{
   edges:{smooth:false,shadow:false,selectionWidth:1.1,hoverWidth:0,scaling:{min:.5,max:4.2}}
 });
 
+let currentNetworkTheme=document.documentElement.dataset.theme==='light'?'light':'dark';
+function applyNetworkTheme(theme,persist=true){currentNetworkTheme=theme==='light'?'light':'dark';document.documentElement.dataset.theme=currentNetworkTheme;if(persist)localStorage.setItem('foliosort-theme',currentNetworkTheme);const fontColor=currentNetworkTheme==='light'?'#1f2937':'#e5e7eb',highlightBorder=currentNetworkTheme==='light'?'#111827':'#ffffff';nodes.update(nodes.getIds().map(id=>{const item=nodes.get(id),color=item.color||{};return{id,font:{...(item.font||{}),color:fontColor},color:{...color,highlight:{...((color&&color.highlight)||{}),border:highlightBorder}}};}));network.redraw();}
+window.addEventListener('message',event=>{if(event.origin!==location.origin||event.data?.type!=='foliosort-theme')return;applyNetworkTheme(event.data.theme,false)});applyNetworkTheme(currentNetworkTheme,false);
+
 const search=document.getElementById('paperSearch');
 const paperQuery=document.getElementById('paperQuery');
 const paperSort=document.getElementById('paperSort');
+let searchMatches=[];
 function paperYearValue(n){const y=parseInt(n.year,10);return Number.isFinite(y)&&y>0?y:null;}
 function paperYear(n){return paperYearValue(n)??9999;}
 function authorText(authors){if(!authors)return'';if(typeof authors==='string')return authors;if(!Array.isArray(authors))return String(authors);return authors.map(a=>{if(typeof a==='string')return a;if(!a||typeof a!=='object')return String(a||'');return a.name||a.full_name||a.display_name||a.raw||[a.given||a.forename,a.family||a.surname].filter(Boolean).join(' ');}).filter(Boolean).join('; ');}
@@ -810,7 +828,8 @@ function firstAuthorSort(n){return (authorText(n.authors).split(';')[0]||n.displ
 function comparePapers(a,b){const mode=paperSort?.value||'year_asc';const ay=paperYearValue(a),by=paperYearValue(b);if(mode==='year_desc'){if(ay===null&&by!==null)return 1;if(by===null&&ay!==null)return-1;if(ay!==by)return(by??-Infinity)-(ay??-Infinity);}else if(mode==='year_asc'){if(ay===null&&by!==null)return 1;if(by===null&&ay!==null)return-1;if(ay!==by)return(ay??Infinity)-(by??Infinity);}else if(mode==='author_asc'){const d=firstAuthorSort(a).localeCompare(firstAuthorSort(b));if(d)return d;}else if(mode==='title_asc'){const d=String(a.title||'').localeCompare(String(b.title||''));if(d)return d;}return firstAuthorSort(a).localeCompare(firstAuthorSort(b))||String(a.title||'').localeCompare(String(b.title||''))||String(a.paper_id||'').localeCompare(String(b.paper_id||''));}
 function sortedPapers(){return Object.values(nodeMeta).sort(comparePapers);}
 function paperOptionLabel(n){const year=paperYearValue(n)??'?';const author=(authorText(n.authors).split(';')[0]||n.display_label||n.paper_id).trim();return `${year} · ${author} · ${(n.title||'(untitled)').slice(0,90)} [${n.paper_id}]`;}
-function refreshPaperSearch(){const prior=search.value;const q=(paperQuery.value||'').trim().toLocaleLowerCase();const rows=sortedPapers().filter(n=>{if(!q)return true;const hay=[n.paper_id,n.display_label,n.year,n.title,n.journal,n.doi,n.original_filename,n.source_relpath,authorText(n.authors)].join(' ').toLocaleLowerCase();return hay.includes(q);});search.innerHTML=rows.map(n=>`<option value="${n.paper_id}">${esc(paperOptionLabel(n))}</option>`).join('');if(!rows.length)search.innerHTML='<option value="" disabled>No matches</option>';else if(rows.some(n=>n.paper_id===prior))search.value=prior;}
+function refreshPaperSearch(){const prior=search.value;const q=(paperQuery.value||'').trim().toLocaleLowerCase();searchMatches=sortedPapers().filter(n=>{if(!q)return true;const hay=[n.paper_id,n.display_label,n.year,n.title,n.journal,n.doi,n.original_filename,n.source_relpath,authorText(n.authors)].join(' ').toLocaleLowerCase();return hay.includes(q);});search.innerHTML=searchMatches.map(n=>`<option value="${n.paper_id}">${esc(paperOptionLabel(n))}</option>`).join('');if(!searchMatches.length)search.innerHTML='<option value="" disabled>No matches</option>';else if(searchMatches.some(n=>n.paper_id===prior))search.value=prior;const qLabel=q?`${searchMatches.length} match${searchMatches.length===1?'':'es'}`:'Enter a search to highlight a group';document.getElementById('highlightInfo').innerHTML=`${esc(qLabel)} · <span class="highlightKey">selected nodes use a yellow center and white ring</span>. Ctrl/Cmd-click graph nodes to add papers.`;}
+function highlightPapers(ids,{fit=true}={}){const selected=[...new Set(ids)].filter(id=>nodeMeta[id]);network.unselectAll();if(!selected.length){document.getElementById('highlightInfo').textContent='No papers highlighted.';return}cf.value='all';applyClusterFilter();network.selectNodes(selected,false);if(fit)network.fit({nodes:selected,animation:{duration:220,easingFunction:'easeInOutQuad'}});document.getElementById('highlightInfo').innerHTML=`<span class="highlightKey">${selected.length} paper${selected.length===1?'':'s'} highlighted</span> · yellow center with white ring.`;if(selected.length===1)showDetail(selected[0]);}
 refreshPaperSearch();
 const cf=document.getElementById('clusterFilter');
 
@@ -848,13 +867,14 @@ function renderClusterUI(){
   renderClusterNarrative();renderClusterPaperList();
 }
 function applyClusterFilter(){const cluster=cf.value;const updates=baseNodeArray.map(n=>({id:n.id,hidden:cluster!=='all'&&String(currentMembership[n.id])!==cluster}));nodes.update(updates);renderClusterNarrative();renderClusterPaperList();}
+function nodeBorder(meta){if(meta.human_review==='approved')return'#22c55e';if(meta.human_review==='rejected')return'#ef4444';return meta.validation_status==='review_required'?'#f59e0b':'#d1d5db';}
 
 function updateNodeAppearance(selected){
   const degree=Object.fromEntries(baseNodeArray.map(n=>[n.id,0]));
   for(const e of rawEdges){const s=selectedScore(e,selected);if(s>0){degree[e.source]=(degree[e.source]||0)+s;degree[e.target]=(degree[e.target]||0)+s;}}
   const updates=baseNodeArray.map(n=>{
     const cid=Number(currentMembership[n.id]??0);const meta=nodeMeta[n.id];meta.cluster_id=cid;meta.cluster_label=(currentClusters.find(c=>Number(c.cluster_id)===cid)||{}).label||`cluster ${cid+1}`;
-    return{id:n.id,cluster:cid,value:8+Math.min(24,6*Math.log1p(degree[n.id]||0)),color:{background:clusterColors[cid]||'#8b5cf6',border:meta.validation_status==='review_required'?'#f59e0b':'#d1d5db',highlight:{background:'#ffffff',border:clusterColors[cid]||'#8b5cf6'}}};
+    return{id:n.id,cluster:cid,value:8+Math.min(24,6*Math.log1p(degree[n.id]||0)),borderWidthSelected:5,color:{background:clusterColors[cid]||'#8b5cf6',border:nodeBorder(meta),highlight:{background:'#fef08a',border:'#ffffff'}}};
   });
   nodes.update(updates);
 }
@@ -920,9 +940,9 @@ function restoreCachedRecluster(){
   try{const raw=localStorage.getItem(`foliosort.network.recluster.${projectSlug}`);if(!raw)return false;const r=JSON.parse(raw);if(r.network_signature!==networkSignature)return false;currentMembership={...r.membership};currentClusters=r.clusters||[];currentClusterNames=r.cluster_names||{};currentClusteringLayers=[...(r.selected_layers||baseClusteringLayers)];currentClusteringResolution=Number(r.resolution??1.0);clusterColors=newClusterColors(currentClusters);const updates=[];for(const [id,pos] of Object.entries(r.positions||{}))updates.push({id,x:Number(pos.x||0),y:Number(pos.y||0)});if(updates.length)nodes.update(updates);renderClusterUI();return true;}catch(_){return false;}
 }
 
-function showDetail(id){const n=nodeMeta[id];if(!n)return;openAccordion('selectedPaper');const props=(n.properties||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const methods=(n.methods||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const keywords=(n.keywords||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const claims=(n.claims||[]).slice(0,6).map(x=>`<div class="claim">• ${esc(x)}</div>`).join('');document.getElementById('detail').innerHTML=`<div><b>${esc(n.display_label||n.paper_id)}</b> <span class="muted">(${esc(n.paper_id)})</span></div><div style="font-size:14px;margin:8px 0"><b>${esc(n.title||'(untitled)')}</b></div><div class="muted">${esc(n.journal||'')}<br>${esc(n.doi||'')}<br>${esc(n.original_filename||n.source_relpath||'')}<br>Cluster C${Number(n.cluster_id)+1}: ${esc((clusterAI(Number(n.cluster_id))||{}).short_name||n.cluster_label||'')}<br>Validation: ${esc(n.validation_status||'')}</div><button class="openpdf" id="openPdfBtn">Open original PDF</button><button id="openCurBtn" class="secondary">Open in Curation Editor</button><div style="margin-top:10px"><b>Properties</b><br>${props||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Methods</b><br>${methods||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Keywords</b><br>${keywords||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Representative claims</b>${claims||'<div class="muted">none</div>'}</div>`;document.getElementById('openPdfBtn').onclick=()=>openOriginalPdf(id);document.getElementById('openCurBtn').onclick=()=>openCuration(id);}
+function showDetail(id){const n=nodeMeta[id];if(!n)return;openAccordion('selectedPaper');const props=(n.properties||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const methods=(n.methods||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const keywords=(n.keywords||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const claims=(n.claims||[]).slice(0,6).map(x=>`<div class="claim">• ${esc(x)}</div>`).join('');const human=n.human_review?`<br>Human validation review: ${esc(n.human_review)}`:'';document.getElementById('detail').innerHTML=`<div><b>${esc(n.display_label||n.paper_id)}</b> <span class="muted">(${esc(n.paper_id)})</span></div><div style="font-size:14px;margin:8px 0"><b>${esc(n.title||'(untitled)')}</b></div><div class="muted">${esc(n.journal||'')}<br>${esc(n.doi||'')}<br>${esc(n.original_filename||n.source_relpath||'')}<br>Cluster C${Number(n.cluster_id)+1}: ${esc((clusterAI(Number(n.cluster_id))||{}).short_name||n.cluster_label||'')}<br>Automatic validation: ${esc(n.validation_status||'')}${human}</div><button class="openpdf" id="openPdfBtn">Open original PDF</button><button id="openCurBtn" class="secondary">Open in Curation Editor</button><div style="margin-top:10px"><b>Properties</b><br>${props||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Methods</b><br>${methods||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Keywords</b><br>${keywords||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Representative claims</b>${claims||'<div class="muted">none</div>'}</div>`;document.getElementById('openPdfBtn').onclick=()=>openOriginalPdf(id);document.getElementById('openCurBtn').onclick=()=>openCuration(id);}
 async function openOriginalPdf(id){const n=nodeMeta[id];if(!n)return;const status=document.getElementById('status');status.textContent=`Opening ${n.display_label||id}…`;try{const r=await fetch(`${API_BASE}/api/open_pdf?id=${encodeURIComponent(id)}`,{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);status.textContent=`Opened ${n.display_label||id}`;}catch(e){status.textContent='PDF opener is not running. Start FolioSort.';alert('Could not open the original PDF. Start FolioSort first.\n\n'+e);}}
-async function openCuration(id){try{await fetch(`${API_BASE}/api/start_curation`,{method:'POST'});window.open(`http://127.0.0.1:8765/?paper=${encodeURIComponent(id)}`,'_blank');}catch(e){alert('Start FolioSort before opening the curation editor.\n\n'+e);}}
+async function openCuration(id){try{await fetch(`${API_BASE}/api/start_curation`,{method:'POST'});window.open(`http://127.0.0.1:8765/?paper=${encodeURIComponent(id)}&theme=${encodeURIComponent(currentNetworkTheme)}`,'_blank');}catch(e){alert('Start FolioSort before opening the curation editor.\n\n'+e);}}
 
 function resolutionText(v){v=Number(v);if(v<0.4)return`${v.toFixed(2)} · very broad / exploratory`;if(v<=0.7)return`${v.toFixed(2)} · broad chapter-scale starting range`;if(v<=1.2)return`${v.toFixed(2)} · balanced starting range`;if(v<=2.0)return`${v.toFixed(2)} · finer section/subtopic range`;return`${v.toFixed(2)} · very fine exploratory splitting`;}
 function updateResolutionHelp(v){document.getElementById('resolutionInterpretation').innerHTML=`<b>${esc(resolutionText(v))}</b>`;}
@@ -930,7 +950,9 @@ function setupSplitter(){const splitter=document.getElementById('splitter');cons
 function openAccordion(name){const details=document.querySelector(`details[data-section="${name}"]`);if(!details)return;details.open=true;details.scrollIntoView({block:'nearest'});}
 function setupAccordions(){const all=[...document.querySelectorAll('details.section')],storageKey=`foliosort.network.openSections.${projectSlug}`;let saved=[];try{saved=JSON.parse(localStorage.getItem(storageKey)||'[]')}catch(_error){saved=[]}const selected=new Set(Array.isArray(saved)?saved:[]);all.forEach(details=>{details.open=selected.has(details.dataset.section);details.addEventListener('toggle',()=>{const openNames=all.filter(item=>item.open).map(item=>item.dataset.section);localStorage.setItem(storageKey,JSON.stringify(openNames));});});}
 
-function relaxLayout(){const btn=document.getElementById('relaxBtn');btn.disabled=true;btn.textContent='Relaxing…';network.setOptions({physics:{enabled:true,solver:'barnesHut',barnesHut:{gravitationalConstant:-4200,centralGravity:.18,springLength:115,springConstant:.035,damping:.35,avoidOverlap:.25},stabilization:{enabled:true,iterations:120,fit:false}}});network.stabilize(120);network.once('stabilized',()=>{network.setOptions({physics:{enabled:false}});btn.disabled=false;btn.textContent='Relax layout';});}
+function setupRightDragTransform(){const canvas=document.getElementById('network');let gesture=null,pending=null,frame=0;const render=()=>{frame=0;if(!gesture||!pending)return;const dx=pending.clientX-gesture.startX,dy=pending.clientY-gesture.startY,angle=dy*.007,cos=Math.cos(angle),sin=Math.sin(angle),updates=[];for(const [id,pos] of Object.entries(gesture.positions)){const x=pos.x-gesture.centerX,y=pos.y-gesture.centerY;updates.push({id,x:gesture.centerX+x*cos-y*sin,y:gesture.centerY+x*sin+y*cos});}nodes.update(updates);network.moveTo({scale:clamp(gesture.scale*Math.exp(dx*.004),.05,4),animation:false});document.getElementById('status').textContent=`Rotating ${Math.round(angle*180/Math.PI)}° · zoom ${network.getScale().toFixed(2)}×`;};const move=event=>{if(!gesture||event.pointerId!==gesture.pointerId)return;event.preventDefault();pending=event;if(!frame)frame=requestAnimationFrame(render);};const finish=event=>{if(!gesture||event.pointerId!==gesture.pointerId)return;if(frame){cancelAnimationFrame(frame);render()}canvas.classList.remove('rotating');gesture=null;pending=null;document.getElementById('status').textContent='Right-drag vertically to rotate · horizontally to zoom';};canvas.addEventListener('contextmenu',event=>event.preventDefault());canvas.addEventListener('pointerdown',event=>{if(event.button!==2)return;event.preventDefault();event.stopImmediatePropagation();const positions=network.getPositions(nodes.getIds()),values=Object.values(positions),centerX=values.reduce((sum,p)=>sum+p.x,0)/Math.max(1,values.length),centerY=values.reduce((sum,p)=>sum+p.y,0)/Math.max(1,values.length);gesture={pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,positions,centerX,centerY,scale:network.getScale()};canvas.classList.add('rotating');try{canvas.setPointerCapture(event.pointerId)}catch(_error){}},{capture:true});window.addEventListener('pointermove',move,{passive:false});window.addEventListener('pointerup',finish);window.addEventListener('pointercancel',finish);}
+
+function relaxLayout(){const btn=document.getElementById('relaxBtn');btn.disabled=true;btn.textContent='Relaxing…';network.setOptions({physics:{enabled:true,solver:'repulsion',repulsion:{centralGravity:.015,springLength:180,springConstant:.012,nodeDistance:165,damping:.55},minVelocity:.15,maxVelocity:10,stabilization:{enabled:true,iterations:100,fit:false}}});network.stabilize(100);network.once('stabilized',()=>{network.setOptions({physics:{enabled:false}});btn.disabled=false;btn.textContent='Relax layout';});}
 
 renderClusterUI();
 const initialMode=String(guiConfig.initial_performance_mode||'balanced');document.getElementById('performanceMode').value=['fast','balanced','full'].includes(initialMode)?initialMode:'balanced';
@@ -946,11 +968,14 @@ document.getElementById('performanceMode').addEventListener('change',scheduleVie
 document.getElementById('resolution').addEventListener('input',e=>{const value=Number(e.target.value);const v=value.toFixed(2);document.getElementById('resolutionBox').textContent=v;document.getElementById('resolutionValue').textContent=v;updateResolutionHelp(value);});
 document.getElementById('reclusterBtn').onclick=recluster;document.getElementById('restoreBtn').onclick=restoreBase;document.getElementById('nameClustersBtn').onclick=()=>nameCurrentClusters(false);document.getElementById('forceNameClustersBtn').onclick=()=>nameCurrentClusters(true);
 cf.addEventListener('change',()=>{applyClusterFilter();if(cf.value!=='all')openAccordion('clusterPapers');network.fit({animation:{duration:180}});});
-document.getElementById('copyClusterList').onclick=copyClusterList;document.getElementById('downloadClusterTxt').onclick=downloadClusterTxt;document.getElementById('downloadClusterCsv').onclick=downloadClusterCsv;document.getElementById('downloadClusterJson').onclick=downloadClusterJson;document.getElementById('downloadClusterPdfs').onclick=downloadClusterPdfs;setupSplitter();setupAccordions();
-paperQuery.addEventListener('input',refreshPaperSearch);paperSort.addEventListener('change',refreshPaperSearch);search.addEventListener('change',()=>{if(!search.value)return;nodes.update({id:search.value,hidden:false});network.selectNodes([search.value]);network.focus(search.value,{scale:1.65,animation:true});showDetail(search.value);});
+document.getElementById('copyClusterList').onclick=copyClusterList;document.getElementById('downloadClusterTxt').onclick=downloadClusterTxt;document.getElementById('downloadClusterCsv').onclick=downloadClusterCsv;document.getElementById('downloadClusterJson').onclick=downloadClusterJson;document.getElementById('downloadClusterPdfs').onclick=downloadClusterPdfs;setupSplitter();setupAccordions();setupRightDragTransform();
+paperQuery.addEventListener('input',refreshPaperSearch);paperSort.addEventListener('change',refreshPaperSearch);search.addEventListener('change',()=>{if(!search.value)return;nodes.update({id:search.value,hidden:false});highlightPapers([search.value],{fit:false});network.focus(search.value,{scale:1.65,animation:true});});document.getElementById('highlightMatches').onclick=()=>{const q=(paperQuery.value||'').trim();if(!q){document.getElementById('highlightInfo').textContent='Enter an author, title, year, journal, DOI, filename, or paper ID first.';paperQuery.focus();return}highlightPapers(searchMatches.map(n=>n.paper_id));};document.getElementById('clearHighlights').onclick=()=>{network.unselectAll();document.getElementById('highlightInfo').textContent='Highlights cleared. Search or select papers to highlight them again.';};
 document.getElementById('fitBtn').onclick=()=>network.fit({animation:{duration:180}});document.getElementById('relaxBtn').onclick=relaxLayout;
 document.getElementById('resetBtn').onclick=()=>{document.querySelectorAll('[data-rel]').forEach(x=>x.checked=true);document.getElementById('performanceMode').value='balanced';document.getElementById('resolution').value='1.00';document.getElementById('resolutionBox').textContent='1.00';document.getElementById('resolutionValue').textContent='1.00';updateResolutionHelp(1.0);restoreBase();};
-network.on('click',p=>{if(p.nodes.length)showDetail(p.nodes[0]);});network.on('doubleClick',p=>{if(p.nodes.length)openOriginalPdf(p.nodes[0]);});
+network.on('click',p=>{if(p.nodes.length)showDetail(p.nodes[0]);});network.on('selectNode',p=>{document.getElementById('highlightInfo').innerHTML=`<span class="highlightKey">${p.nodes.length} paper${p.nodes.length===1?'':'s'} highlighted</span> · Ctrl/Cmd-click to add or remove nodes.`;});network.on('doubleClick',p=>{if(p.nodes.length)openOriginalPdf(p.nodes[0]);});
+let publishedNetworkRevision=null,revisionCheckBusy=false;
+async function watchPublishedNetwork(){if(revisionCheckBusy)return;revisionCheckBusy=true;try{const response=await fetch(`${API_BASE}/api/status?project=${encodeURIComponent(projectSlug)}`,{cache:'no-store'});if(!response.ok)return;const result=await response.json();const revision=result.network_revision==null?'':String(result.network_revision);if(!revision)return;if(publishedNetworkRevision===null){publishedNetworkRevision=revision;return}if(revision!==publishedNetworkRevision){document.getElementById('status').textContent='Curated paper information updated. Refreshing Multiplex Network…';location.reload();}}catch(_error){}finally{revisionCheckBusy=false;}}
+watchPublishedNetwork();setInterval(watchPublishedNetwork,2500);
 </script>
 </body></html>'''
     replacements = {
@@ -971,12 +996,19 @@ network.on('click',p=>{if(p.nodes.length)showDetail(p.nodes[0]);});network.on('d
     for key, value in replacements.items():
         html_doc = html_doc.replace(key, value)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(html_doc, encoding="utf-8")
+    tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+    tmp_path.write_text(html_doc, encoding="utf-8")
+    tmp_path.replace(out_path)
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build a SPECTER2/citation/property/method/keyword multiplex graph and Leiden clusters.")
     ap.add_argument("--config", default=str(ROOT / "config.json"))
     ap.add_argument("--project", default=None, help="Build only one project. REVIEW_PROJECT is used when omitted.")
+    ap.add_argument(
+        "--skip-ai-cluster-naming",
+        action="store_true",
+        help="Finish after deterministic clustering; AI names can be generated later from Multiplex Network.",
+    )
     args = ap.parse_args()
     config, root = load_config(args.config)
     paths = get_paths(config, root)
@@ -1000,6 +1032,10 @@ def main() -> None:
         rows = conn.execute("SELECT * FROM papers WHERE active=1 ORDER BY paper_id").fetchall()
         selected_project_name = "All papers"
         out_dir = paths.get("network_gui", root / "outputs/network_gui")
+    human_reviews = {
+        str(row["paper_id"]): str(row["decision"])
+        for row in conn.execute("SELECT paper_id,decision FROM human_reviews").fetchall()
+    }
     out_dir.mkdir(parents=True, exist_ok=True)
     allowed = set(cfg.get("include_validation_status", ["pass", "review_required"]))
     nodes: dict[str, dict[str, Any]] = {}
@@ -1049,6 +1085,7 @@ def main() -> None:
             "source_relpath": row["source_relpath"],
             "original_filename": row["original_filename"],
             "validation_status": status,
+            "human_review": human_reviews.get(str(paper_id), ""),
             "properties": properties,
             "methods": methods,
             "keywords": keywords,
@@ -1275,6 +1312,8 @@ def main() -> None:
         "ids": ids,
         "layers": layer_records,
         "weights": layer_weights,
+        "resolution": float(clustering_cfg.get("resolution", 1.0)),
+        "seed": int(clustering_cfg.get("seed", 42)),
     })[:20]
     payload = {
         "nodes": payload_nodes,
@@ -1291,6 +1330,7 @@ def main() -> None:
             "curation_enabled": use_curated,
             "project_slug": project_slug,
             "network_signature": network_signature,
+            "clustering_resolution": float(clustering_cfg.get("resolution", 1.0)),
             "layout": "precomputed sparse-backbone Fruchterman-Reingold/DrL",
             "rendering": "maximum-spanning-forest + symmetric top-k edge backbone",
             "layer_weight_policy": str(cfg.get("layer_weight_policy", "heuristic_prior_v1_not_empirically_calibrated")),
@@ -1301,7 +1341,12 @@ def main() -> None:
     # Name the saved all-layer clusters while Qwen is already running during the
     # pipeline. Failure is non-fatal: technical frequency labels remain usable.
     naming_cfg = cfg.get("cluster_naming", {})
-    if project_slug and bool(naming_cfg.get("enabled", True)) and bool(naming_cfg.get("auto_after_build", True)):
+    if (
+        not args.skip_ai_cluster_naming
+        and project_slug
+        and bool(naming_cfg.get("enabled", True))
+        and bool(naming_cfg.get("auto_after_build", True))
+    ):
         naming_python = Path(os.environ.get("REVIEW_PYTHON") or (root / ".venv" / "bin" / "python"))
         naming_script = root / "scripts" / "17_name_clusters.py"
         if naming_python.exists() and naming_script.exists():
@@ -1338,7 +1383,7 @@ def main() -> None:
                 print(f"WARNING: cluster naming skipped: {type(exc).__name__}: {exc}")
 
     with (out_dir / "nodes.csv").open("w", encoding="utf-8-sig", newline="") as file:
-        fields = ["paper_id", "display_label", "title", "year", "journal", "doi", "source_relpath", "original_filename", "validation_status", "cluster_id", "cluster_label", "node_size"]
+        fields = ["paper_id", "display_label", "title", "year", "journal", "doi", "source_relpath", "original_filename", "validation_status", "human_review", "cluster_id", "cluster_label", "node_size"]
         writer = csv.DictWriter(file, fieldnames=fields)
         writer.writeheader()
         for node in payload_nodes:

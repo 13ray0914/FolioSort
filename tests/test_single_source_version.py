@@ -49,7 +49,7 @@ class SingleSourceVersionTests(unittest.TestCase):
 
     def test_review_app_server_expected_version_is_dynamic(self) -> None:
         source = read("scripts/review_app_server.py")
-        self.assertIn('expected_version = f"{__version__}-security-hardening"', source)
+        self.assertRegex(source, r'expected_version = f"\{__version__\}-[^"]+"')
         self.assertNotRegex(source, r'expected_version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+-')
 
     def test_curation_server_server_version_is_dynamic(self) -> None:
@@ -60,7 +60,8 @@ class SingleSourceVersionTests(unittest.TestCase):
 
     def test_curation_server_health_version_is_dynamic(self) -> None:
         source = read("scripts/curation_server.py")
-        self.assertIn('"version": f"{__version__}-security-hardening"', source)
+        self.assertIn('CURATION_APP_VERSION = f"{__version__}-', source)
+        self.assertIn('"version": CURATION_APP_VERSION', source)
         self.assertNotRegex(source, r'"version"\s*:\s*"[0-9]+\.[0-9]+\.[0-9]+-')
 
     def test_multiplex_network_script_version_is_dynamic(self) -> None:
@@ -88,13 +89,13 @@ class SingleSourceVersionTests(unittest.TestCase):
     def test_start_review_app_expected_version_is_dynamic(self) -> None:
         source = read("scripts/start_review_app.sh")
         self.assertIn("from foliosort import __version__", source)
-        self.assertIn("${_BASE_VERSION}-security-hardened-network-workspace", source)
+        self.assertRegex(source, r'EXPECTED_VERSION="\$\{_BASE_VERSION\}-[^"]+"')
         self.assertNotRegex(source, r'EXPECTED_VERSION="[0-9]+\.[0-9]+\.[0-9]+-')
 
     def test_open_curation_gui_expected_version_is_dynamic(self) -> None:
         source = read("scripts/open_curation_gui.sh")
         self.assertIn("from foliosort import __version__", source)
-        self.assertIn("${_BASE_VERSION}-security-hardening", source)
+        self.assertRegex(source, r'EXPECTED_VERSION="\$\{_BASE_VERSION\}-[^"]+"')
         self.assertNotRegex(source, r'EXPECTED_VERSION="[0-9]+\.[0-9]+\.[0-9]+-')
 
     def test_pipeline_script_banners_are_dynamic(self) -> None:

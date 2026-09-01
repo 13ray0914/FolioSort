@@ -30,6 +30,13 @@
     "consolidate_header": 0,
     "consolidate_citations": 0
   },
+  "ocr": {
+    "command": "ocrmypdf",
+    "languages": "eng+jpn",
+    "jobs": 4,
+    "timeout_seconds_per_pdf": 1800,
+    "minimum_text_chars": 40
+  },
   "llm": {
     "base_url": "http://127.0.0.1:8080/v1",
     "api_key": "no-key",

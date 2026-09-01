@@ -5,7 +5,7 @@ PORT="${REVIEW_CURATION_PORT:-8765}"
 URL="http://127.0.0.1:$PORT/"
 PYTHON_BIN="${REVIEW_PYTHON:-$ROOT/.venv/bin/python}"
 _BASE_VERSION="$("$PYTHON_BIN" -c 'from foliosort import __version__; print(__version__)' 2>/dev/null || echo "unknown")"
-EXPECTED_VERSION="${_BASE_VERSION}-security-hardening"
+EXPECTED_VERSION="${_BASE_VERSION}-validation-review-v4"
 mkdir -p "$ROOT/logs"
 health="$(curl -fsS "http://127.0.0.1:$PORT/health" 2>/dev/null || true)"
 if [[ -z "$health" ]] || ! printf '%s' "$health" | grep -Eq '"version"[[:space:]]*:[[:space:]]*"'"$EXPECTED_VERSION"'"'; then

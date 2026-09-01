@@ -5,7 +5,7 @@ PORT="${REVIEW_APP_PORT:-8766}"
 URL="http://127.0.0.1:${PORT}/"
 PYTHON_BIN="${REVIEW_PYTHON:-$ROOT/.venv/bin/python}"
 _BASE_VERSION="$("$PYTHON_BIN" -c 'from foliosort import __version__; print(__version__)' 2>/dev/null || echo "unknown")"
-EXPECTED_VERSION="${_BASE_VERSION}-security-hardened-network-workspace"
+EXPECTED_VERSION="${_BASE_VERSION}-ocr-validation-network-ui-v4"
 mkdir -p "$ROOT/logs"
 
 health="$(curl -fsS "${URL}health" 2>/dev/null || true)"

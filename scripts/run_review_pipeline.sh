@@ -130,7 +130,12 @@ echo "--- Scan raw_pdfs and update stable IDs ---"
 "$PYTHON_BIN" -u scripts/01_make_manifest.py
 
 echo "--- Run resumable v4 stages 2-11 ---"
-"$PYTHON_BIN" -u run_pipeline.py --from-step 2 --to-step 11
+PIPELINE_ARGS=(--from-step 2 --to-step 11)
+if [[ -n "${REVIEW_IDS:-}" ]]; then
+  PIPELINE_ARGS+=(--ids "$REVIEW_IDS")
+  echo "--- Restricted downstream analysis: $REVIEW_IDS ---"
+fi
+"$PYTHON_BIN" -u run_pipeline.py "${PIPELINE_ARGS[@]}"
 
 echo "--- Controlled vocabulary + human curation overlay ---"
 "$PYTHON_BIN" -u scripts/11b_apply_curation.py

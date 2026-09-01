@@ -31,13 +31,26 @@ class ReleaseConfigurationTests(unittest.TestCase):
         server = self.read("scripts/curation_server.py")
         dashboard = self.read("scripts/review_app_server.py")
         launcher = self.read("scripts/open_curation_gui.sh")
-        expected_version = f"{__version__}-security-hardening"
-
-        # All three now derive the version dynamically from __version__; verify
-        # the f-string pattern is present rather than a frozen literal.
-        self.assertIn('"version": f"{__version__}-security-hardening"', server)
-        self.assertIn('expected_version = f"{__version__}-security-hardening"', dashboard)
-        self.assertIn('EXPECTED_VERSION="${_BASE_VERSION}-security-hardening"', launcher)
+        server_version = re.search(
+            r'^CURATION_APP_VERSION = f"\{__version__\}-([^"]+)"$',
+            server,
+            re.MULTILINE,
+        )
+        dashboard_version = re.search(
+            r'^\s*expected_version = f"\{__version__\}-([^"]+)"$',
+            dashboard,
+            re.MULTILINE,
+        )
+        launcher_version = re.search(
+            r'^EXPECTED_VERSION="\$\{_BASE_VERSION\}-([^"]+)"$',
+            launcher,
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(server_version)
+        self.assertIsNotNone(dashboard_version)
+        self.assertIsNotNone(launcher_version)
+        self.assertEqual(server_version.group(1), dashboard_version.group(1))
+        self.assertEqual(server_version.group(1), launcher_version.group(1))
 
     def test_grobid_ports_are_loopback_only(self) -> None:
         compose = self.read("docker-compose.grobid.yml")
@@ -108,9 +121,13 @@ class ReleaseConfigurationTests(unittest.TestCase):
         settings = source[settings_start:settings_end]
         self.assertIn('class="card libraryCard"', settings)
         self.assertIn('class="card referenceCard"', settings)
+        self.assertIn('class="card advancedSettingsCard"', settings)
         self.assertIn('id="curation"', settings)
         self.assertLess(settings.index('class="card libraryCard"'), settings.index('class="card referenceCard"'))
-        self.assertLess(settings.index('class="card referenceCard"'), settings.index('class="card curationSettingsCard"'))
+        self.assertLess(settings.index('class="card referenceCard"'), settings.index('class="card advancedSettingsCard"'))
+        self.assertLess(settings.index('class="card advancedSettingsCard"'), settings.index('class="card curationSettingsCard"'))
+        self.assertNotIn("Manage the shared PDF library, reference corrections, and curation tools.", settings)
+        self.assertNotIn("<h1>Settings</h1>", settings)
         results_start = source.index('class="card results"')
         results_end = source.index('class="card pipelineCard"', results_start)
         self.assertNotIn('id="curation"', source[results_start:results_end])
@@ -124,6 +141,33 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertIn(".pipelineActions button{flex:1 1 0;min-width:0}", source)
         self.assertNotIn("Pipeline log", source)
         self.assertNotIn("Pipeline: checking", source)
+        self.assertIn('id="clusterCount"', source)
+        self.assertIn('id="clusterList"', source)
+        self.assertIn("renderClusters(j.network_clusters)", source)
+        for key in ("citation", "semantic", "claim", "property", "method", "keyword", "keyword_semantic", "bibliographic_coupling"):
+            self.assertIn(f'data-network-weight="{key}"', source)
+        self.assertIn('id="saveNetworkSettings"', source)
+        self.assertIn('id="rebuildNetwork"', source)
+        self.assertIn('parsed.path == "/api/network_settings"', source)
+        self.assertIn('parsed.path == "/api/rebuild_network"', source)
+
+    def test_network_only_rebuild_skips_full_analysis_and_uses_a_process_snapshot(self) -> None:
+        server = self.read("scripts/review_app_server.py")
+        rebuild = self.read("scripts/rebuild_network.sh")
+        graph = self.read("scripts/13_build_multiplex_network.py")
+
+        self.assertIn('script_name="rebuild_network.sh", kind="network"', server)
+        self.assertIn("snapshot.write_bytes(source.read_bytes())", server)
+        self.assertIn("process-snapshots", server)
+        self.assertIn('"$NETWORK_PYTHON" -u "$ROOT/scripts/13_build_multiplex_network.py"', rebuild)
+        self.assertIn("--skip-ai-cluster-naming", rebuild)
+        self.assertNotIn("run_pipeline.py", rebuild)
+        self.assertNotIn("04_enrich_metadata.py", rebuild)
+        self.assertNotIn("14_build_knowledge_graph", rebuild)
+        self.assertIn('"resolution": float(clustering_cfg.get("resolution", 1.0))', graph)
+        self.assertIn('"clustering_resolution": float(clustering_cfg.get("resolution", 1.0))', graph)
+        self.assertIn('"--skip-ai-cluster-naming"', graph)
+        self.assertIn("not args.skip_ai_cluster_naming", graph)
 
     def test_light_theme_action_buttons_use_readable_low_saturation_colors(self) -> None:
         source = self.read("scripts/review_app_server.py")
@@ -131,8 +175,11 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertIn("--primary-bg:#e6ebf2", source)
         self.assertIn("--primary-border:#c7d0dd", source)
         self.assertIn("--primary-text:#334155", source)
-        self.assertIn("--danger-bg:#c81e1e", source)
-        self.assertIn("--danger-text:#fff", source)
+        self.assertIn("--danger-bg:#f6dddd", source)
+        self.assertIn("--danger-border:#d8a1a1", source)
+        self.assertIn("--danger-text:#7f1d1d", source)
+        self.assertIn(':root[data-theme="light"] .pill.ok{color:#166534', source)
+        self.assertIn(':root[data-theme="light"] .pill.busy{color:#7c4a03', source)
         self.assertIn(
             ".primary{background:var(--primary-bg);border-color:var(--primary-border);color:var(--primary-text)}",
             source,

@@ -19,9 +19,11 @@ import csv
 import fcntl
 import io
 import json
+import math
 import mimetypes
 import os
 import secrets
+import shutil
 import signal
 import sqlite3
 import subprocess
@@ -67,20 +69,31 @@ from lib.v4_common import ensure_v4_schema, make_visual_chunks, normalize_ws, va
 
 from foliosort import __version__
 
-APP_VERSION = f"{__version__}-security-hardened-network-workspace"
+APP_VERSION = f"{__version__}-ocr-validation-network-ui-v4"
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
+NETWORK_WEIGHT_DEFAULTS = {
+    "citation": 1.35,
+    "semantic": 0.75,
+    "claim": 0.30,
+    "property": 0.45,
+    "method": 0.35,
+    "keyword": 0.25,
+    "keyword_semantic": 0.20,
+    "bibliographic_coupling": 0.45,
+}
+NETWORK_WEIGHT_KEYS = tuple(NETWORK_WEIGHT_DEFAULTS)
 
 HTML = r'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FolioSort</title><script>try{const saved=localStorage.getItem('foliosort-theme');document.documentElement.dataset.theme=saved||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark')}catch(_error){document.documentElement.dataset.theme='dark'}</script><style>
 :root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;background:#151515;color:#e8e8eb}*{box-sizing:border-box}body{margin:0;background:#151515}.wrap{max-width:1220px;margin:0 auto;padding:24px}h1{font-size:26px;margin:0 0 5px}h2{font-size:16px;margin:0 0 10px}.muted{color:#a1a1aa;font-size:12px;line-height:1.45}.grid{display:grid;grid-template-columns:1.08fr .92fr;gap:16px;margin-top:18px;align-items:start}.card{background:#1c1c1f;border:1px solid #33343a;border-radius:12px;padding:16px}.drop{border:2px dashed #555862;border-radius:12px;padding:28px 18px;text-align:center;background:#202024;transition:.15s}.drop.drag{border-color:#b6b7c3;background:#28282e}.drop b{display:block;font-size:18px;margin-bottom:7px}button,.btn,input,select{background:#2a2a30;color:#f4f4f5;border:1px solid #4a4a53;border-radius:8px;padding:10px 13px;font:inherit}button,.btn{cursor:pointer}button:hover,.btn:hover{border-color:#85858f}button:disabled,.btn:disabled{opacity:.42;cursor:not-allowed}.primary{background:#373741;font-weight:700;flex:1}.danger{background:#472525;border-color:#7d3838;font-weight:700;flex:0 0 160px}.projectrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.toolbar button{flex:1;min-width:150px}.pipelineActions{display:flex;gap:8px;margin-top:12px}.statusline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}.pill{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid #444752;color:#d4d4d8}.ok{color:#86efac;border-color:#365c43}.busy{color:#fde68a;border-color:#6b5a2c}.bad{color:#fca5a5;border-color:#713c3c}.files{margin-top:12px;max-height:250px;overflow:auto}.file{padding:8px 0;border-top:1px solid #303036;font-size:13px;word-break:break-all}.log{background:#111113;border:1px solid #303036;border-radius:8px;padding:10px;white-space:pre-wrap;overflow:auto;max-height:650px;min-height:480px;font:12px/1.45 Consolas,monospace}.hint{margin-top:8px;font-size:12px;color:#a1a1aa;line-height:1.45}.counts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.metric{background:#222226;border-radius:8px;padding:10px}.metric b{font-size:20px;display:block}.hidden{display:none}.projectName{font-size:13px;margin-top:8px}.divider{height:1px;background:#303036;margin:16px 0}.subhead{font-size:14px;font-weight:700;margin:0 0 10px}.results,.libraryCard{margin-top:16px}.libraryControls{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(150px,.7fr);gap:8px}.libraryActions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.libraryTarget{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;margin-top:8px;align-items:center}.libraryList{margin-top:10px;border:1px solid #303036;border-radius:8px;max-height:360px;overflow:auto;background:#18181b}.librow{display:grid;grid-template-columns:28px 58px 72px minmax(0,1fr);gap:8px;align-items:start;padding:9px 10px;border-top:1px solid #29292f;font-size:12px}.librow:first-child{border-top:0}.librow input{width:auto;margin:2px 0}.libtitle{font-weight:600;color:#e4e4e7;line-height:1.35}.libmeta{color:#9ca3af;font-size:11px;line-height:1.35;margin-top:2px}.member{color:#86efac}.notmember{color:#a1a1aa}.libsummary{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:8px}.libsummary .toolbar{margin:0}.smallbtn{padding:7px 9px;font-size:12px}.selection{color:#c4b5fd}@media(max-width:800px){.grid{grid-template-columns:1fr}.wrap{padding:14px}.counts{grid-template-columns:1fr 1fr}.projectrow{grid-template-columns:1fr 1fr}.projectrow select{grid-column:1/-1}.pipelineActions{flex-direction:column}.danger{flex:auto}.log{min-height:300px;max-height:430px}.libraryControls,.libraryActions,.libraryTarget{grid-template-columns:1fr}.librow{grid-template-columns:28px 58px 1fr}.librow .libyear{display:none}}
 /* Theme and dashboard layout overrides. */
 :root{--page:#151515;--surface:#1c1c1f;--surface2:#222226;--control:#2a2a30;--line:#33343a;--line2:#303036;--text:#e8e8eb;--muted:#a1a1aa;--accent:#c4b5fd;--drop:#202024;--log:#111113;--primary-bg:#4c3c78;--primary-border:#7662ad;--primary-text:#fff;--danger-bg:#692e2e;--danger-border:#a44a4a;--danger-text:#fff;color-scheme:dark;background:var(--page);color:var(--text)}
-:root[data-theme="light"]{--page:#f4f5f7;--surface:#fff;--surface2:#f0f1f4;--control:#fff;--line:#d5d8df;--line2:#e2e4e9;--text:#202124;--muted:#62666f;--accent:#64748b;--drop:#f8f8fa;--log:#f7f7f9;--primary-bg:#e6ebf2;--primary-border:#c7d0dd;--primary-text:#334155;--danger-bg:#c81e1e;--danger-border:#991b1b;--danger-text:#fff;color-scheme:light}
+:root[data-theme="light"]{--page:#f4f5f7;--surface:#fff;--surface2:#f0f1f4;--control:#fff;--line:#d5d8df;--line2:#e2e4e9;--text:#202124;--muted:#62666f;--accent:#64748b;--drop:#f8f8fa;--log:#f7f7f9;--primary-bg:#e6ebf2;--primary-border:#c7d0dd;--primary-text:#334155;--danger-bg:#f6dddd;--danger-border:#d8a1a1;--danger-text:#7f1d1d;color-scheme:light}
 html{overflow-y:scroll;scrollbar-gutter:stable}body{background:var(--page);color:var(--text);transition:background .15s,color .15s}.card{background:var(--surface);border-color:var(--line)}.muted,.hint{color:var(--muted)}button,.btn,input,select{background:var(--control);color:var(--text);border-color:var(--line)}.primary{background:var(--primary-bg);border-color:var(--primary-border);color:var(--primary-text)}.danger{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger-text)}.primary:hover,.danger:hover{filter:brightness(1.08)}.drop{background:var(--drop);border-color:var(--line)}.drop.drag{background:var(--surface2)}.metric,.primaryText{background:var(--surface2)}.divider{background:var(--line2)}.libraryList{background:var(--surface);border-color:var(--line2)}.librow{border-color:var(--line2)}.libtitle{color:var(--text)}.log{background:var(--log);color:var(--text);border-color:var(--line2)}
-:root[data-theme="light"] .primary:hover{background:#dce4ee;border-color:#b9c5d4;filter:none}
-.appHeader{height:76px;background:#111827;color:#fff;border-bottom:1px solid #293548;box-shadow:0 2px 12px rgba(0,0,0,.14)}.headerInner{height:100%;max-width:1320px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:28px}.brandLockup{display:flex;align-items:center;gap:11px;flex:none}.brandIcon{width:46px;height:46px;display:grid;place-items:center;color:#fff}.brandMark{width:46px;height:46px;display:block}.brandName{font-size:25px;font-weight:800;letter-spacing:-.025em}.appTabs{display:flex;align-self:stretch;gap:4px}.appTab{position:relative;width:96px;border:0;border-radius:0;background:transparent;color:#cbd5e1;padding:0 12px;font-size:15px}.appTab:hover{border-color:transparent;color:#fff;background:rgba(255,255,255,.05)}.appTab[aria-selected="true"]{color:#fff;font-weight:700}.appTab[aria-selected="true"]::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:#fff}.appMeta{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}.versionBadge{border:1px solid rgba(255,255,255,.24);border-radius:999px;padding:7px 10px;font-size:12px;color:#dbe3ee;white-space:nowrap}.appHeader .themeToggle{width:auto;white-space:nowrap;padding:8px 11px;background:#1f2937;color:#fff;border-color:#46556b}.wrap{max-width:1320px;padding:16px 20px 20px}.appView[hidden]{display:none!important}.projectPage{height:calc(100vh - 112px);min-height:590px;display:grid;grid-template-rows:minmax(390px,1fr) clamp(145px,20vh,185px);gap:14px}.homeGrid{display:grid;grid-template-columns:1fr 1.15fr .75fr;gap:14px;margin-top:0;align-items:stretch;min-height:0}.homeGrid>.card{height:100%;min-height:0;overflow:auto}.homeGrid .results{margin-top:0}.projectCard .projectrow{grid-template-columns:1fr 1fr}.projectCard .projectrow select{grid-column:1/-1}.addCard{display:flex;flex-direction:column}.addCard .drop{padding:22px 18px}.addCard .files{flex:1;min-height:64px;max-height:145px}.pipelineActions button{flex:1 1 0;min-width:0}.results .toolbar{flex-direction:column}.results .toolbar button{width:100%;min-width:0}.pipelineCard{margin:0;padding:12px 16px;min-height:0;display:flex;flex-direction:column}.pipelineCard h2{margin-bottom:8px}.pipelineCard .log{min-height:0;max-height:none;flex:1;padding:8px}.settingsHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.settingsHeader h1{font-size:22px;margin:0 0 4px}.settingsGrid{display:grid;gap:14px}.settingsGrid .libraryCard,.settingsGrid .referenceCard,.settingsGrid .curationSettingsCard{margin-top:0}.curationSettingsCard .toolbar{margin-top:14px}.curationSettingsCard .toolbar button{width:100%}
-.referenceCard{margin-top:16px}.referenceControls{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(190px,.8fr) auto;gap:8px;margin-top:10px}.referenceNote{width:100%;margin-top:8px}.referenceDetail{margin-top:9px;padding:10px;border:1px solid var(--line2);border-radius:8px;background:var(--surface2);font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto}.referenceDetail.bad{color:var(--text);border-color:#b45353}
-@media(max-width:1000px){.projectPage{height:auto;min-height:0;display:block}.homeGrid{grid-template-columns:1fr 1fr}.results{grid-column:1/-1}.results .toolbar{flex-direction:row}.results .toolbar button{min-width:150px}.pipelineCard{height:170px;margin-top:14px}.headerInner{gap:16px}}@media(max-width:700px){.appHeader{height:auto}.headerInner{min-height:76px;padding:10px 14px;gap:8px;flex-wrap:wrap}.brandIcon{width:40px;height:40px}.brandMark{width:40px;height:40px}.brandName{font-size:22px}.appTabs{height:42px;order:3;width:100%}.appTab{flex:1;width:auto;padding:0 12px}.appMeta{margin-left:auto}.versionBadge{display:none}.wrap{padding:14px}.homeGrid{grid-template-columns:1fr}.results{grid-column:auto}.homeGrid>.card{overflow:visible}.pipelineCard{height:170px}.results .toolbar{flex-direction:column}.referenceControls{grid-template-columns:1fr}.settingsHeader{display:block}}
+:root[data-theme="light"] .primary:hover{background:#dce4ee;border-color:#b9c5d4;filter:none}:root[data-theme="light"] .danger:hover{background:#f1cece;border-color:#c98989;filter:none}:root[data-theme="light"] .pill{color:#475569;border-color:#94a3b8;background:#f8fafc}:root[data-theme="light"] .pill.ok{color:#166534;border-color:#84ad90;background:#f0fdf4}:root[data-theme="light"] .pill.busy{color:#7c4a03;border-color:#c49a49;background:#fffbeb}:root[data-theme="light"] .pill.bad{color:#991b1b;border-color:#d29a9a;background:#fff1f2}
+.appHeader{height:76px;background:#111827;color:#fff;border-bottom:1px solid #293548;box-shadow:0 2px 12px rgba(0,0,0,.14)}.headerInner{height:100%;max-width:1320px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:28px}.brandLockup{display:flex;align-items:center;gap:11px;flex:none}.brandIcon{width:46px;height:46px;display:grid;place-items:center;color:#fff}.brandMark{width:46px;height:46px;display:block}.brandName{font-size:25px;font-weight:800;letter-spacing:-.025em}.appTabs{display:flex;align-self:stretch;gap:4px}.appTab{position:relative;width:96px;border:0;border-radius:0;background:transparent;color:#cbd5e1;padding:0 12px;font-size:15px}.appTab:hover{border-color:transparent;color:#fff;background:rgba(255,255,255,.05)}.appTab[aria-selected="true"]{color:#fff;font-weight:700}.appTab[aria-selected="true"]::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:#fff}.appMeta{display:flex;align-items:center;gap:8px;flex:none;margin-left:auto}.versionBadge{border:1px solid rgba(255,255,255,.24);border-radius:999px;padding:7px 10px;font-size:12px;color:#dbe3ee;white-space:nowrap}.appHeader .themeToggle{width:auto;white-space:nowrap;padding:8px 11px;background:#1f2937;color:#fff;border-color:#46556b}.wrap{max-width:1320px;padding:16px 20px 20px}.appView[hidden]{display:none!important}.projectPage{height:calc(100vh - 112px);min-height:590px;display:grid;grid-template-rows:minmax(390px,1fr) clamp(145px,20vh,185px);gap:14px}.homeGrid{display:grid;grid-template-columns:1fr 1.15fr .75fr;gap:14px;margin-top:0;align-items:stretch;min-height:0}.homeGrid>.card{height:100%;min-height:0;overflow:auto}.homeGrid .results{margin-top:0}.projectCard .projectrow{grid-template-columns:1fr 1fr}.projectCard .projectrow select{grid-column:1/-1}.addCard{display:flex;flex-direction:column}.addCard .drop{padding:22px 18px}.addCard .files{flex:1;min-height:64px;max-height:145px}.pipelineActions button{flex:1 1 0;min-width:0}.results .toolbar{flex-direction:column}.results .toolbar button{width:100%;min-width:0}.clusterSummary{margin-top:14px;padding-top:12px;border-top:1px solid var(--line2)}.clusterSummaryHead{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px}.clusterCount{color:var(--muted)}.clusterList{display:grid;gap:6px;margin-top:8px}.clusterRow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:7px;align-items:start;padding:6px 7px;border-radius:7px;background:var(--surface2);font-size:11px;line-height:1.3}.clusterIndex{font-weight:700}.clusterName{overflow-wrap:anywhere}.clusterSize{color:var(--muted);white-space:nowrap}.pipelineCard{margin:0;padding:12px 16px;min-height:0;display:flex;flex-direction:column}.pipelineCard h2{margin-bottom:8px}.pipelineCard .log{min-height:0;max-height:none;flex:1;padding:8px}.settingsGrid{display:grid;gap:14px}.settingsGrid .libraryCard,.settingsGrid .referenceCard,.settingsGrid .advancedSettingsCard,.settingsGrid .curationSettingsCard{margin-top:0}.advancedWeightGrid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;margin-top:12px}.advancedWeightGrid label,.resolutionControl label{display:grid;gap:5px;font-size:12px;color:var(--muted)}.advancedWeightGrid input,.resolutionControl input{width:100%}.resolutionControl{max-width:300px;margin-top:12px}.advancedActions{display:flex;gap:8px;margin-top:13px}.advancedActions button{flex:1}.curationSettingsCard .toolbar{margin-top:14px}.curationSettingsCard .toolbar button{width:100%}
+.referenceCard{margin-top:16px}.referenceControls{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(190px,.8fr) auto;gap:8px;margin-top:10px}.referenceNote{width:100%;margin-top:8px}.referenceDetail{margin-top:9px;padding:10px;border:1px solid var(--line2);border-radius:8px;background:var(--surface2);font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto}.referenceDetail.bad{color:var(--text);border-color:#b45353}.networkView{height:calc(100vh - 76px);min-height:520px;background:var(--page)}.networkFrame{display:block;width:100%;height:100%;border:0;background:var(--page)}.wrap.networkMode{max-width:none;padding:0;height:calc(100vh - 76px)}
+@media(max-width:1000px){.projectPage{height:auto;min-height:0;display:block}.homeGrid{grid-template-columns:1fr 1fr}.results{grid-column:1/-1}.results .toolbar{flex-direction:row}.results .toolbar button{min-width:150px}.pipelineCard{height:170px;margin-top:14px}.headerInner{gap:16px}.advancedWeightGrid{grid-template-columns:repeat(2,minmax(140px,1fr))}}@media(max-width:700px){.appHeader{height:auto}.headerInner{min-height:76px;padding:10px 14px;gap:8px;flex-wrap:wrap}.brandIcon{width:40px;height:40px}.brandMark{width:40px;height:40px}.brandName{font-size:22px}.appTabs{height:42px;order:3;width:100%}.appTab{flex:1;width:auto;padding:0 12px}.appMeta{margin-left:auto}.versionBadge{display:none}.wrap{padding:14px}.homeGrid{grid-template-columns:1fr}.results{grid-column:auto}.homeGrid>.card{overflow:visible}.pipelineCard{height:170px}.results .toolbar{flex-direction:column}.referenceControls,.advancedWeightGrid{grid-template-columns:1fr}.advancedActions{flex-direction:column}}
 </style></head><body>
 <header class="appHeader">
   <div class="headerInner">
@@ -95,7 +108,7 @@ html{overflow-y:scroll;scrollbar-gutter:stable}body{background:var(--page);color
     <div class="appMeta"><span class="versionBadge">Version __APP_VERSION__</span><button id="themeToggle" class="themeToggle" type="button">Light mode</button></div>
   </div>
 </header>
-<main class="wrap">
+<main id="appMain" class="wrap">
 <section id="projectView" class="appView" role="tabpanel" aria-labelledby="projectTab">
 <div class="projectPage">
 <div class="homeGrid">
@@ -116,7 +129,11 @@ html{overflow-y:scroll;scrollbar-gutter:stable}body{background:var(--page);color
   </div>
   <div class="card results">
     <h2>Results</h2>
-    <div class="toolbar"><button id="network">Literature network</button><button id="knowledge">Knowledge graph</button></div>
+    <div class="toolbar"><button id="network">Multiplex Network</button><button id="knowledge">Knowledge graph</button></div>
+    <div class="clusterSummary" aria-live="polite">
+      <div class="clusterSummaryHead"><b>Default clusters</b><span id="clusterCount" class="clusterCount">Not generated</span></div>
+      <div id="clusterList" class="clusterList"><div class="muted">Run Analyze / Update to generate clusters.</div></div>
+    </div>
     <div class="hint">Results open only the selected project. Analyze affected projects after changing membership.</div>
   </div>
 </div>
@@ -124,7 +141,6 @@ html{overflow-y:scroll;scrollbar-gutter:stable}body{background:var(--page);color
 </div>
 </section>
 <section id="settingsView" class="appView" role="tabpanel" aria-labelledby="settingsTab" hidden>
-<div class="settingsHeader"><div><h1>Settings</h1><div class="muted">Manage the shared PDF library, reference corrections, and curation tools.</div></div></div>
 <div class="settingsGrid">
 <div class="card libraryCard">
   <h2>Master PDF library</h2><div class="muted">Canonical parent list. Project membership can be changed without moving or deleting the source PDF, extracted text, summaries, embeddings, or curation.</div>
@@ -143,6 +159,29 @@ html{overflow-y:scroll;scrollbar-gutter:stable}body{background:var(--page);color
     <div id="referenceDetail" class="referenceDetail muted">Loading reference-resolution issues…</div>
     <div id="referenceMsg" class="hint">After saving, run Analyze/update. Existing external results are reused, so only new or corrected references require external lookup.</div>
 </div>
+<div class="card ocrSettingsCard">
+  <h2>OCR blocked papers</h2>
+  <div class="muted">Create searchable OCR derivatives for image-only PDFs in the selected project. Original PDFs are preserved. Only successfully OCR-processed papers continue through analysis; completed papers are reused.</div>
+  <div class="toolbar"><button id="runOcr" class="primary">Run OCR blocked papers</button></div>
+  <div id="ocrStatus" class="hint">Checking OCR requirements…</div>
+</div>
+<div class="card advancedSettingsCard">
+  <h2>Advanced settings</h2>
+  <div class="muted">Adjust how strongly each evidence layer influences Multiplex Network clustering. Zero disables a layer. Changes are used the next time the network is built; existing results are not rewritten immediately.</div>
+  <div class="advancedWeightGrid">
+    <label>Citations<input id="weightCitation" data-network-weight="citation" type="number" min="0" max="5" step="0.05"></label>
+    <label>Semantic similarity<input id="weightSemantic" data-network-weight="semantic" type="number" min="0" max="5" step="0.05"></label>
+    <label>Claims<input id="weightClaim" data-network-weight="claim" type="number" min="0" max="5" step="0.05"></label>
+    <label>Properties<input id="weightProperty" data-network-weight="property" type="number" min="0" max="5" step="0.05"></label>
+    <label>Methods<input id="weightMethod" data-network-weight="method" type="number" min="0" max="5" step="0.05"></label>
+    <label>Keywords<input id="weightKeyword" data-network-weight="keyword" type="number" min="0" max="5" step="0.05"></label>
+    <label>Related keyword meaning<input id="weightKeywordSemantic" data-network-weight="keyword_semantic" type="number" min="0" max="5" step="0.05"></label>
+    <label>Shared references<input id="weightBibliographic" data-network-weight="bibliographic_coupling" type="number" min="0" max="5" step="0.05"></label>
+  </div>
+  <div class="resolutionControl"><label>Cluster resolution (higher creates more, smaller clusters)<input id="networkResolution" type="number" min="0.2" max="3" step="0.05"></label></div>
+  <div class="advancedActions"><button id="resetNetworkSettings">Restore recommended values</button><button id="saveNetworkSettings" class="primary">Save network settings</button><button id="rebuildNetwork">Rebuild Multiplex Network only</button></div>
+  <div id="advancedSettingsMsg" class="hint">Loading network settings…</div>
+</div>
 <div class="card curationSettingsCard">
   <h2>Curation editor</h2>
   <div class="muted">Review and correct generated paper metadata and analysis in the dedicated curation workspace.</div>
@@ -150,17 +189,23 @@ html{overflow-y:scroll;scrollbar-gutter:stable}body{background:var(--page);color
 </div>
 </div>
 </section>
+<section id="networkView" class="appView networkView" aria-label="Multiplex Network" hidden><iframe id="networkFrame" class="networkFrame" title="Multiplex Network"></iframe></section>
 </main>
 <script>
-const $=x=>document.getElementById(x),drop=$('drop'),pick=$('pick');let currentProject=localStorage.getItem('foliosort-project')||localStorage.getItem('review-project')||'default';let refreshing=false;let libraryPapers=[];let selectedLibraryPapers=new Set();let projectRows=[];let referenceIssues=[];
-function applyTheme(theme,persist=true){const next=theme==='light'?'light':'dark';document.documentElement.dataset.theme=next;$('themeToggle').textContent=next==='dark'?'Light mode':'Dark mode';$('themeToggle').setAttribute('aria-label',`Switch to ${next==='dark'?'light':'dark'} mode`);if(persist)localStorage.setItem('foliosort-theme',next)}
+const $=x=>document.getElementById(x),drop=$('drop'),pick=$('pick'),bootParams=new URLSearchParams(location.search);let currentProject=bootParams.get('project')||localStorage.getItem('foliosort-project')||localStorage.getItem('review-project')||'default';let refreshing=false;let libraryPapers=[];let selectedLibraryPapers=new Set();let projectRows=[];let referenceIssues=[];let advancedSettingsDirty=false;let networkSettingDefaults=null;
+function syncNetworkTheme(){const frame=$('networkFrame');if(frame?.contentWindow)frame.contentWindow.postMessage({type:'foliosort-theme',theme:document.documentElement.dataset.theme},location.origin)}
+function applyTheme(theme,persist=true){const next=theme==='light'?'light':'dark';document.documentElement.dataset.theme=next;$('themeToggle').textContent=next==='dark'?'Light mode':'Dark mode';$('themeToggle').setAttribute('aria-label',`Switch to ${next==='dark'?'light':'dark'} mode`);if(persist)localStorage.setItem('foliosort-theme',next);syncNetworkTheme()}
 $('themeToggle').onclick=()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');applyTheme(document.documentElement.dataset.theme,false);
-function showAppTab(name,persist=true){const next=name==='settings'?'settings':'project';const projectActive=next==='project';$('projectView').hidden=!projectActive;$('settingsView').hidden=projectActive;$('projectTab').setAttribute('aria-selected',String(projectActive));$('settingsTab').setAttribute('aria-selected',String(!projectActive));if(persist)localStorage.setItem('foliosort-tab',next)}
-$('projectTab').onclick=()=>showAppTab('project');$('settingsTab').onclick=()=>showAppTab('settings');showAppTab(localStorage.getItem('foliosort-tab')||'project',false);
+function networkFrameUrl(){return `/network-content?project=${encodeURIComponent(currentProject)}&theme=${encodeURIComponent(document.documentElement.dataset.theme||'dark')}`}
+function showAppTab(name,persist=true){const next=name==='settings'?'settings':name==='network'?'network':'project';const projectActive=next==='project',settingsActive=next==='settings',networkActive=next==='network';$('projectView').hidden=!projectActive;$('settingsView').hidden=!settingsActive;$('networkView').hidden=!networkActive;$('projectTab').setAttribute('aria-selected',String(projectActive));$('settingsTab').setAttribute('aria-selected',String(settingsActive));$('appMain').classList.toggle('networkMode',networkActive);if(networkActive){const frame=$('networkFrame'),url=networkFrameUrl();if(frame.getAttribute('src')!==url)frame.src=url;else syncNetworkTheme()}if(persist)localStorage.setItem('foliosort-tab',next)}
+$('networkFrame').addEventListener('load',syncNetworkTheme);$('projectTab').onclick=()=>showAppTab('project');$('settingsTab').onclick=()=>showAppTab('settings');showAppTab(bootParams.get('view')==='network'?'network':(localStorage.getItem('foliosort-tab')||'project'),false);
 function saveProject(){localStorage.setItem('foliosort-project',currentProject)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}function fmtBytes(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
 function fmtDuration(seconds){let value=Math.max(0,Math.round(Number(seconds)||0));if(value<90)return `${Math.max(1,Math.round(value/60))} min`;if(value<5400)return `${Math.round(value/60)} min`;if(value<172800){const hours=Math.floor(value/3600),minutes=Math.round((value%3600)/60);return minutes?`${hours} hr ${minutes} min`:`${hours} hr`}const days=Math.floor(value/86400),hours=Math.round((value%86400)/3600);return hours?`${days} d ${hours} hr`:`${days} d`}
-function renderEstimate(status){const pill=$('estimatePill'),estimate=status.process_estimate;if(!status.pipeline_running){pill.textContent='Time remaining: shown after Analyze';pill.className='pill';pill.title="A prediction learned from unfinished chunks and this computer's processing history.";return}if(!estimate){pill.textContent='Time remaining: calculating…';pill.className='pill busy';pill.title='Waiting for enough Process log information to calculate an estimate.';return}const point=estimate.estimate_seconds??Math.round((estimate.remaining_low_seconds+estimate.remaining_high_seconds)/2),uncertainty=estimate.uncertainty_seconds??Math.round((estimate.remaining_high_seconds-estimate.remaining_low_seconds)/2);pill.textContent=`Time remaining: about ${fmtDuration(point)} (±${fmtDuration(uncertainty)})`;pill.className='pill busy';const progress=estimate.active_papers?` · Step ${estimate.step}/11: ${estimate.observed_papers}/${estimate.active_papers} papers observed`: ` · Step ${estimate.step}/11`;const samples=estimate.model?.training_samples?` · learned from ${estimate.model.training_samples} completed chunk calls`:'';const blocked=estimate.blocked_papers?` · ${estimate.blocked_papers} OCR-required papers excluded`:'';const warning=estimate.provider_warning?' External service errors are increasing uncertainty.':'';pill.title=`Prediction from past local timings and unfinished work${progress}${samples}${blocked}.${warning}`}
+function renderEstimate(status){const pill=$('estimatePill'),estimate=status.process_estimate;if(!status.pipeline_running){pill.textContent='Time remaining: shown after Analyze';pill.className='pill';pill.title="A prediction learned from unfinished chunks and this computer's processing history.";return}if(status.process_kind==='network'){pill.textContent='Multiplex Network rebuild in progress';pill.className='pill busy';pill.title='Only the selected project network is being rebuilt. Full paper analysis is not running.';return}if(status.process_kind==='ocr'){pill.textContent='OCR and affected-paper analysis in progress';pill.className='pill busy';pill.title='Original PDFs are preserved. Only OCR-blocked papers continue through analysis.';return}if(!estimate){pill.textContent='Time remaining: calculating…';pill.className='pill busy';pill.title='Waiting for enough Process log information to calculate an estimate.';return}const point=estimate.estimate_seconds??Math.round((estimate.remaining_low_seconds+estimate.remaining_high_seconds)/2),uncertainty=estimate.uncertainty_seconds??Math.round((estimate.remaining_high_seconds-estimate.remaining_low_seconds)/2);pill.textContent=`Time remaining: about ${fmtDuration(point)} (±${fmtDuration(uncertainty)})`;pill.className='pill busy';const progress=estimate.active_papers?` · Step ${estimate.step}/11: ${estimate.observed_papers}/${estimate.active_papers} papers observed`: ` · Step ${estimate.step}/11`;const samples=estimate.model?.training_samples?` · learned from ${estimate.model.training_samples} completed chunk calls`:'';const blocked=estimate.blocked_papers?` · ${estimate.blocked_papers} OCR-required papers excluded`:'';const warning=estimate.provider_warning?' External service errors are increasing uncertainty.':'';pill.title=`Prediction from past local timings and unfinished work${progress}${samples}${blocked}.${warning}`}
+function renderOcrStatus(info,running){const count=Number(info?.blocked_count||0),ready=Number(info?.derivative_count||0),deps=Boolean(info?.available);$('ocrStatus').textContent=count?`${count} image-only paper${count===1?'':'s'} blocked in this project${ready?` · ${ready} OCR derivative${ready===1?'':'s'} already available`:''}.${deps?' OCRmyPDF and English/Japanese language data are ready.':' OCR dependencies are not installed in WSL.'}`:'No OCR-blocked papers in this project.';$('runOcr').disabled=running||!count||!deps;$('runOcr').title=!deps?'Install OCRmyPDF and the English/Japanese Tesseract language packs first.':''}
+function renderClusters(summary){const clusters=summary?.clusters||[];$('clusterCount').textContent=summary?.ready?`${clusters.length} cluster${clusters.length===1?'':'s'}`:'Not generated';$('clusterList').innerHTML=clusters.length?clusters.slice(0,8).map(c=>`<div class="clusterRow"><span class="clusterIndex">C${Number(c.cluster_id)+1}</span><span class="clusterName">${esc(c.name)}</span><span class="clusterSize">${Number(c.size)||0} papers</span></div>`).join('')+(clusters.length>8?`<div class="muted">+ ${clusters.length-8} more clusters</div>`:''):`<div class="muted">${summary?.ready?'No clusters were found in the generated network.':'Run Analyze / Update to generate clusters.'}</div>`}
+function renderNetworkSettings(settings,force=false){if(!settings||advancedSettingsDirty&&!force)return;networkSettingDefaults=settings.defaults||networkSettingDefaults;document.querySelectorAll('[data-network-weight]').forEach(input=>{const value=settings.weights?.[input.dataset.networkWeight];if(value!==undefined)input.value=Number(value).toFixed(2)});if(settings.resolution!==undefined)$('networkResolution').value=Number(settings.resolution).toFixed(2);advancedSettingsDirty=false;if(!$('advancedSettingsMsg').dataset.saved)$('advancedSettingsMsg').textContent='Saved values are used for the next Multiplex Network build.'}
 function yearNum(v){const y=parseInt(v,10);return Number.isFinite(y)&&y>0?y:9999}
 async function jsonFetch(url,opt={}){const r=await fetch(url,opt);const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j}
 function purl(path){return path+(path.includes('?')?'&':'?')+'project='+encodeURIComponent(currentProject)}
@@ -177,13 +222,18 @@ $('referenceIssue').addEventListener('change',showReferenceIssue);$('saveReferen
 async function refreshLibrary(){try{const j=await jsonFetch(purl('/api/library'));libraryPapers=j.papers||[];projectRows=j.projects||projectRows;const valid=new Set(libraryPapers.map(p=>p.paper_id));selectedLibraryPapers=new Set([...selectedLibraryPapers].filter(x=>valid.has(x)));renderLibrary()}catch(e){$('libraryMsg').textContent='Could not load Master PDF library: '+e}}
 async function membershipAction(action){const ids=[...selectedLibraryPapers];if(!ids.length){alert('Select at least one paper in the Master PDF library.');return}const target=(action==='copy_to'||action==='move_to')?$('targetProject').value:null;if((action==='copy_to'||action==='move_to')&&!target){alert('Choose a target project.');return}if(action==='remove_current'&&!confirm(`Remove ${ids.length} selected paper(s) from the current project? The canonical PDFs will NOT be deleted.`))return;if(action==='move_to'&&!confirm(`Move ${ids.length} selected paper membership(s) from the current project to the target project? Canonical PDFs will NOT be moved on disk.`))return;$('libraryMsg').textContent='Updating project membership…';try{const j=await jsonFetch(purl('/api/project_membership'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,paper_ids:ids,target_project:target})});$('libraryMsg').textContent=j.message;selectedLibraryPapers.clear();await refresh();await refreshLibrary()}catch(e){$('libraryMsg').textContent='Membership update failed: '+e}}
 $('librarySearch').addEventListener('input',renderLibrary);$('libraryFilter').addEventListener('change',renderLibrary);$('selectVisible').onclick=()=>{visibleLibraryRows().forEach(p=>selectedLibraryPapers.add(p.paper_id));renderLibrary()};$('clearLibrarySelection').onclick=()=>{selectedLibraryPapers.clear();renderLibrary()};$('addCurrent').onclick=()=>membershipAction('add_current');$('removeCurrent').onclick=()=>membershipAction('remove_current');$('copyTarget').onclick=()=>membershipAction('copy_to');$('moveTarget').onclick=()=>membershipAction('move_to');
-$('project').addEventListener('change',async()=>{currentProject=$('project').value;saveProject();selectedLibraryPapers.clear();await refresh();await refreshLibrary();await refreshReferenceIssues()});
+$('project').addEventListener('change',async()=>{currentProject=$('project').value;saveProject();selectedLibraryPapers.clear();$('networkFrame').removeAttribute('src');await refresh();await refreshLibrary();await refreshReferenceIssues()});
 $('newProject').onclick=async()=>{const name=prompt('New project name');if(!name)return;try{const j=await jsonFetch('/api/create_project?name='+encodeURIComponent(name),{method:'POST'});currentProject=j.project_slug;saveProject();await refresh();await refreshLibrary();$('uploadMsg').textContent=`Project created: ${j.name}`}catch(e){alert(e)}};
 $('renameProject').onclick=async()=>{const selected=$('project').selectedOptions[0];const name=prompt('New display name for this project',selected?selected.textContent.replace(/\s*\(\d+\)\s*$/,''):'');if(!name)return;try{await jsonFetch('/api/rename_project?project='+encodeURIComponent(currentProject)+'&name='+encodeURIComponent(name),{method:'POST'});await refresh();await refreshLibrary()}catch(e){alert(e)}};
 $('analyze').onclick=async()=>{$('estimatePill').textContent='Time remaining: calculating…';$('estimatePill').className='pill busy';try{const j=await jsonFetch(purl('/api/analyze'),{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not start process: '+e;await refresh()}};
 $('stopPipeline').onclick=async()=>{if(!confirm('Stop the running process? Completed outputs will be kept.'))return;$('stopPipeline').disabled=true;$('uploadMsg').textContent='Stopping process...';try{const j=await jsonFetch('/api/stop_pipeline',{method:'POST'});$('uploadMsg').textContent=j.message;await refresh()}catch(e){$('uploadMsg').textContent='Could not stop process: '+e;await refresh()}};
-$('network').onclick=()=>window.open(purl('/network'),'_blank');$('knowledge').onclick=()=>window.open(purl('/knowledge'),'_blank');$('curation').onclick=async()=>{try{await jsonFetch('/api/start_curation',{method:'POST'});window.open('http://127.0.0.1:8765/','_blank')}catch(e){alert(e)}};
-async function refresh(){if(refreshing)return;refreshing=true;try{const j=await jsonFetch(purl('/api/status'));const sel=$('project');projectRows=j.projects||[];if(!projectRows.some(p=>p.project_slug===currentProject)){currentProject=projectRows[0]?.project_slug||'default';saveProject()}sel.innerHTML=projectRows.map(p=>`<option value="${esc(p.project_slug)}" ${p.project_slug===currentProject?'selected':''}>${esc(p.name)} (${p.active_papers})</option>`).join('');populateTargetProjects();$('active').textContent=j.active_papers;$('memory').textContent=j.memory_count;$('networkState').textContent=j.network_stale?'stale':(j.network_ready?'ready':'not yet');$('projectDisplay').textContent=`${j.project_name} · ${currentProject}`;let runText=j.pipeline_running?'running':'idle';if(j.pipeline_running&&j.running_project_name)runText+=` · ${j.running_project_name}`;$('pipePill').textContent='Process: '+runText;$('pipePill').className='pill '+(j.pipeline_running?'busy':'ok');renderEstimate(j);$('stopPipeline').disabled=!j.pipeline_stoppable;$('stopPipeline').title=j.pipeline_running&&!j.pipeline_stoppable?'This process was not started by FolioSort, so FolioSort will not stop an unknown process.':'';$('files').innerHTML=(j.raw_pdfs||[]).slice(-30).reverse().map(f=>`<div class="file">${esc(f.name)} <span class="muted">${fmtBytes(f.size)}</span>${f.paper_id?` <span class="muted">(${esc(f.paper_id)})</span>`:''}</div>`).join('')||'<div class="muted">No PDFs in this project yet.</div>';const visibleLog=(j.log_tail||'No process log yet.').replace(/\bPipeline\b/g,'Process').replace(/\bpipeline\b/g,'process');$('log').textContent=visibleLog;const L=$('log');L.scrollTop=L.scrollHeight;$('svcPill').textContent='FolioSort: ready';$('svcPill').className='pill ok'}catch(e){$('svcPill').textContent='FolioSort: disconnected';$('svcPill').className='pill bad'}finally{refreshing=false}}
+$('resetNetworkSettings').onclick=()=>{if(!networkSettingDefaults)return;renderNetworkSettings({weights:networkSettingDefaults.weights,resolution:networkSettingDefaults.resolution,defaults:networkSettingDefaults},true);advancedSettingsDirty=true;$('advancedSettingsMsg').textContent='Recommended values loaded. Press Save network settings to apply them.';delete $('advancedSettingsMsg').dataset.saved};
+document.querySelectorAll('[data-network-weight],#networkResolution').forEach(input=>input.addEventListener('input',()=>{advancedSettingsDirty=true;$('advancedSettingsMsg').textContent='Unsaved changes';delete $('advancedSettingsMsg').dataset.saved}));
+$('saveNetworkSettings').onclick=async()=>{const weights={};document.querySelectorAll('[data-network-weight]').forEach(input=>weights[input.dataset.networkWeight]=Number(input.value));$('saveNetworkSettings').disabled=true;$('advancedSettingsMsg').textContent='Saving network settings…';try{const j=await jsonFetch('/api/network_settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({weights,resolution:Number($('networkResolution').value)})});advancedSettingsDirty=false;$('advancedSettingsMsg').textContent=j.message;$('advancedSettingsMsg').dataset.saved='true';renderNetworkSettings(j.settings,true)}catch(e){$('advancedSettingsMsg').textContent='Could not save network settings: '+e}finally{$('saveNetworkSettings').disabled=false}};
+$('rebuildNetwork').onclick=async()=>{if(advancedSettingsDirty){alert('Save the network settings before rebuilding.');return}if(!confirm(`Rebuild the Multiplex Network for ${currentProject} using saved analysis? The current network files for this project will be replaced.`))return;$('rebuildNetwork').disabled=true;$('advancedSettingsMsg').textContent='Starting Multiplex Network rebuild…';try{const j=await jsonFetch(purl('/api/rebuild_network'),{method:'POST'});$('advancedSettingsMsg').textContent=j.message;await refresh()}catch(e){$('advancedSettingsMsg').textContent='Could not start Multiplex Network rebuild: '+e}finally{if(!$('rebuildNetwork').dataset.running)$('rebuildNetwork').disabled=false}};
+$('runOcr').onclick=async()=>{if(!confirm(`Run OCR for image-only papers in ${currentProject}? Original PDFs will be preserved. Successfully OCR-processed papers will continue through analysis.`))return;$('runOcr').disabled=true;$('ocrStatus').textContent='Starting OCR…';try{const j=await jsonFetch(purl('/api/run_ocr'),{method:'POST'});$('ocrStatus').textContent=j.message;await refresh()}catch(e){$('ocrStatus').textContent='Could not start OCR: '+e;await refresh()}};
+$('network').onclick=()=>showAppTab('network');$('knowledge').onclick=()=>window.open(purl('/knowledge'),'_blank');$('curation').onclick=async()=>{try{await jsonFetch('/api/start_curation',{method:'POST'});window.open(`http://127.0.0.1:8765/?theme=${encodeURIComponent(document.documentElement.dataset.theme||'dark')}`,'_blank')}catch(e){alert(e)}};
+async function refresh(){if(refreshing)return;refreshing=true;try{const j=await jsonFetch(purl('/api/status'));const sel=$('project');projectRows=j.projects||[];if(!projectRows.some(p=>p.project_slug===currentProject)){currentProject=projectRows[0]?.project_slug||'default';saveProject()}sel.innerHTML=projectRows.map(p=>`<option value="${esc(p.project_slug)}" ${p.project_slug===currentProject?'selected':''}>${esc(p.name)} (${p.active_papers})</option>`).join('');populateTargetProjects();$('active').textContent=j.active_papers;$('memory').textContent=j.memory_count;$('networkState').textContent=j.network_stale?'stale':(j.network_ready?'ready':'not yet');renderClusters(j.network_clusters);renderNetworkSettings(j.network_settings);renderOcrStatus(j.ocr_status,j.pipeline_running);$('projectDisplay').textContent=`${j.project_name} · ${currentProject}`;let runText=j.pipeline_running?(j.process_kind==='network'?'rebuilding network':(j.process_kind==='ocr'?'running OCR':'running')):'idle';if(j.pipeline_running&&j.running_project_name)runText+=` · ${j.running_project_name}`;$('pipePill').textContent='Process: '+runText;$('pipePill').className='pill '+(j.pipeline_running?'busy':'ok');renderEstimate(j);$('analyze').disabled=j.pipeline_running;$('rebuildNetwork').disabled=j.pipeline_running;$('rebuildNetwork').dataset.running=j.pipeline_running?'true':'';$('stopPipeline').disabled=!j.pipeline_stoppable;$('stopPipeline').title=j.pipeline_running&&!j.pipeline_stoppable?'This process was not started by FolioSort, so FolioSort will not stop an unknown process.':'';$('files').innerHTML=(j.raw_pdfs||[]).slice(-30).reverse().map(f=>`<div class="file">${esc(f.name)} <span class="muted">${fmtBytes(f.size)}</span>${f.paper_id?` <span class="muted">(${esc(f.paper_id)})</span>`:''}</div>`).join('')||'<div class="muted">No PDFs in this project yet.</div>';const visibleLog=(j.log_tail||'No process log yet.').replace(/\bPipeline\b/g,'Process').replace(/\bpipeline\b/g,'process');$('log').textContent=visibleLog;const L=$('log');L.scrollTop=L.scrollHeight;$('svcPill').textContent='FolioSort: ready';$('svcPill').className='pill ok'}catch(e){$('svcPill').textContent='FolioSort: disconnected';$('svcPill').className='pill bad'}finally{refreshing=false}}
 (async()=>{await refresh();await refreshLibrary();await refreshReferenceIssues()})();setInterval(refresh,2500);setInterval(refreshLibrary,15000);setInterval(refreshReferenceIssues,30000);
 </script></body></html>'''.replace("__APP_VERSION__", APP_VERSION.split("-", 1)[0])
 
@@ -191,6 +241,7 @@ async function refresh(){if(refreshing)return;refreshing=true;try{const j=await 
 
 class FolioSortApp:
     def __init__(self, config_path: str):
+        self.config_path = Path(config_path).resolve()
         self.config, self.root = load_config(config_path)
         self.paths = get_paths(self.config, self.root)
         self.raw_dir = self.paths["raw_pdfs"]
@@ -200,6 +251,9 @@ class FolioSortApp:
         self.pipeline_lock = self.log_dir / "auto_pipeline.lock"
         self.pipeline_pid_file = self.log_dir / "review-app-pipeline.pid"
         self.pipeline_project_file = self.log_dir / "review-app-pipeline.project"
+        self.process_kind_file = self.log_dir / "review-app-process.kind"
+        self.process_snapshot_dir = self.log_dir / "process-snapshots"
+        self.process_snapshot_dir.mkdir(parents=True, exist_ok=True)
         self.curation_pid_file = self.log_dir / "curation-server.pid"
         self.download_lock = threading.Lock()
         self.pending_downloads: dict[str, tuple[Path, str, float]] = {}
@@ -209,17 +263,34 @@ class FolioSortApp:
         self.call_model_cache_key: tuple[int, str] | None = None
         self.call_model_cache: dict[str, dict[str, float | int]] | None = None
         self.analysis_chunk_cache: dict[str, tuple[tuple[int, int, int, int], int]] = {}
-        conn = connect_db(self.paths["database"])
+        self.network_settings_lock = threading.Lock()
+        self.network_summary_cache: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+        self.ocr_dependency_cache: tuple[float, dict[str, Any]] | None = None
+        self.database_degraded = False
+        conn = self.db()
         try:
-            ensure_project_schema(conn)
-            ensure_v4_schema(conn)
+            if not self.database_degraded:
+                ensure_v4_schema(conn)
         finally:
             conn.close()
 
     def db(self) -> sqlite3.Connection:
-        conn = connect_db(self.paths["database"])
-        ensure_project_schema(conn)
-        return conn
+        try:
+            conn = connect_db(self.paths["database"])
+            ensure_project_schema(conn)
+            self.database_degraded = False
+            return conn
+        except sqlite3.OperationalError as exc:
+            if "disk i/o error" not in str(exc).lower():
+                raise
+            # A long-running Process can temporarily hold the SQLite WAL on
+            # Windows-mounted WSL storage. Keep the dashboard readable until
+            # that stage releases it; every later request retries normal mode.
+            uri = f"file:{self.paths['database'].as_posix()}?mode=ro&immutable=1"
+            conn = sqlite3.connect(uri, uri=True)
+            conn.row_factory = sqlite3.Row
+            self.database_degraded = True
+            return conn
 
     def pipeline_running(self) -> bool:
         # On Windows/WSL, the same DrvFs file may be reached through both
@@ -249,10 +320,19 @@ class FolioSortApp:
         except OSError:
             self.pipeline_pid_file.unlink(missing_ok=True)
             return None
-        if "run_review_pipeline.sh" not in cmdline:
+        if not any(name in cmdline for name in ("run_review_pipeline", "rebuild_network", "run_ocr_blocked")):
             self.pipeline_pid_file.unlink(missing_ok=True)
             return None
         return pid
+
+    def running_process_kind(self) -> str | None:
+        if not self.pipeline_running():
+            return None
+        try:
+            kind = self.process_kind_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            kind = ""
+        return kind if kind in {"analysis", "network", "ocr"} else "analysis"
 
     def running_project_slug(self) -> str | None:
         if not self.pipeline_running():
@@ -263,7 +343,12 @@ class FolioSortApp:
             return None
 
     def latest_log(self) -> Path | None:
-        logs = sorted(self.log_dir.glob("auto_pipeline_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+        logs = [
+            *self.log_dir.glob("auto_pipeline_*.log"),
+            *self.log_dir.glob("network_rebuild_*.log"),
+            *self.log_dir.glob("ocr_*.log"),
+        ]
+        logs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return logs[0] if logs else None
 
     def append_log_marker(self, message: str) -> None:
@@ -417,6 +502,21 @@ class FolioSortApp:
     def projects(self) -> list[dict[str, Any]]:
         conn = self.db()
         try:
+            if self.database_degraded:
+                rows = conn.execute(
+                    """
+                    SELECT pr.project_slug,pr.name,pr.created_at,pr.updated_at,
+                           COUNT(DISTINCT CASE WHEN p.active=1 THEN pp.paper_id END) AS active_papers,
+                           COUNT(DISTINCT pp.paper_id) AS total_papers
+                    FROM projects pr
+                    LEFT JOIN paper_projects pp ON pp.project_slug=pr.project_slug
+                    LEFT JOIN papers p ON p.paper_id=pp.paper_id
+                    GROUP BY pr.project_slug,pr.name,pr.created_at,pr.updated_at
+                    ORDER BY CASE WHEN pr.project_slug=? THEN 0 ELSE 1 END, lower(pr.name), pr.project_slug
+                    """,
+                    (DEFAULT_PROJECT_SLUG,),
+                ).fetchall()
+                return [dict(row) for row in rows]
             return list_projects(conn)
         finally:
             conn.close()
@@ -459,6 +559,69 @@ class FolioSortApp:
             conn.close()
         memory_dir = self.root / "data" / "summary_memory"
         return sum((memory_dir / f"{paper_id}.memory.json").exists() for paper_id in ids)
+
+    def ocr_status(self, project_slug: str) -> dict[str, Any]:
+        slug = normalize_project_slug(project_slug)
+        conn = self.db()
+        try:
+            ids = set(project_paper_ids(conn, slug, active_only=True))
+            if not ids:
+                blocked_count = derivative_count = 0
+            else:
+                placeholders = ",".join("?" for _ in ids)
+                blocked_count = int(conn.execute(
+                    f"""
+                    SELECT COUNT(*) FROM stages
+                    WHERE stage='grobid_parse' AND status='error'
+                      AND error LIKE 'OCR_REQUIRED:%' AND paper_id IN ({placeholders})
+                    """,
+                    tuple(sorted(ids)),
+                ).fetchone()[0])
+                derivative_count = int(conn.execute(
+                    f"""
+                    SELECT COUNT(*) FROM stages
+                    WHERE stage='ocr' AND status='success' AND paper_id IN ({placeholders})
+                    """,
+                    tuple(sorted(ids)),
+                ).fetchone()[0])
+        finally:
+            conn.close()
+
+        now = time.monotonic()
+        if self.ocr_dependency_cache is None or now - self.ocr_dependency_cache[0] > 60:
+            isolated_bin = self.root / ".venv_ocr" / "bin"
+            ocrmypdf = shutil.which("ocrmypdf") or (
+                str(isolated_bin / "ocrmypdf") if (isolated_bin / "ocrmypdf").is_file() else None
+            )
+            tesseract = shutil.which("tesseract") or (
+                str(isolated_bin / "tesseract") if (isolated_bin / "tesseract").is_file() else None
+            )
+            languages: set[str] = set()
+            if tesseract:
+                try:
+                    completed = subprocess.run(
+                        [tesseract, "--list-langs"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        timeout=5,
+                        check=False,
+                    )
+                    languages = {line.strip() for line in completed.stdout.splitlines() if line.strip()}
+                except Exception:
+                    languages = set()
+            dependency = {
+                "available": bool(ocrmypdf and tesseract and {"eng", "jpn"}.issubset(languages)),
+                "ocrmypdf": bool(ocrmypdf),
+                "tesseract": bool(tesseract),
+                "languages": sorted(languages & {"eng", "jpn"}),
+            }
+            self.ocr_dependency_cache = (now, dependency)
+        return {
+            "blocked_count": blocked_count,
+            "derivative_count": derivative_count,
+            **self.ocr_dependency_cache[1],
+        }
 
     def project_raw_files(self, project_slug: str) -> list[dict[str, Any]]:
         slug = normalize_project_slug(project_slug)
@@ -575,6 +738,136 @@ class FolioSortApp:
             return result
         finally:
             conn.close()
+
+    def network_settings(self) -> dict[str, Any]:
+        multiplex = self.config.get("multiplex_graph") or {}
+        configured = multiplex.get("layer_weights") or {}
+        weights: dict[str, float] = {}
+        for key, default in NETWORK_WEIGHT_DEFAULTS.items():
+            try:
+                value = float(configured.get(key, default))
+            except (TypeError, ValueError):
+                value = default
+            weights[key] = value if math.isfinite(value) else default
+        try:
+            resolution = float((multiplex.get("clustering") or {}).get("resolution", 1.0))
+        except (TypeError, ValueError):
+            resolution = 1.0
+        if not math.isfinite(resolution):
+            resolution = 1.0
+        return {
+            "weights": weights,
+            "resolution": resolution,
+            "defaults": {"weights": dict(NETWORK_WEIGHT_DEFAULTS), "resolution": 1.0},
+        }
+
+    def save_network_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raw_weights = payload.get("weights")
+        if not isinstance(raw_weights, dict):
+            raise ValueError("weights must be an object")
+        unknown = sorted(set(raw_weights) - set(NETWORK_WEIGHT_KEYS))
+        missing = [key for key in NETWORK_WEIGHT_KEYS if key not in raw_weights]
+        if unknown:
+            raise ValueError(f"Unknown network weight: {unknown[0]}")
+        if missing:
+            raise ValueError(f"Missing network weight: {missing[0]}")
+        weights: dict[str, float] = {}
+        for key in NETWORK_WEIGHT_KEYS:
+            raw = raw_weights[key]
+            if isinstance(raw, bool):
+                raise ValueError(f"{key} weight must be a number")
+            try:
+                value = float(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{key} weight must be a number") from exc
+            if not math.isfinite(value) or not 0.0 <= value <= 5.0:
+                raise ValueError(f"{key} weight must be between 0 and 5")
+            weights[key] = round(value, 4)
+        if not any(value > 0 for value in weights.values()):
+            raise ValueError("At least one network layer must have a positive weight")
+        raw_resolution = payload.get("resolution")
+        if isinstance(raw_resolution, bool):
+            raise ValueError("Cluster resolution must be a number")
+        try:
+            resolution = float(raw_resolution)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Cluster resolution must be a number") from exc
+        if not math.isfinite(resolution) or not 0.2 <= resolution <= 3.0:
+            raise ValueError("Cluster resolution must be between 0.2 and 3.0")
+        resolution = round(resolution, 4)
+
+        with self.network_settings_lock:
+            try:
+                document = json.loads(self.config_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError("Could not read the FolioSort configuration") from exc
+            if not isinstance(document, dict):
+                raise RuntimeError("FolioSort configuration must be a JSON object")
+            multiplex = document.setdefault("multiplex_graph", {})
+            if not isinstance(multiplex, dict):
+                raise RuntimeError("multiplex_graph configuration must be an object")
+            multiplex["layer_weights"] = weights
+            clustering = multiplex.setdefault("clustering", {})
+            if not isinstance(clustering, dict):
+                clustering = {}
+                multiplex["clustering"] = clustering
+            clustering["resolution"] = resolution
+            temporary = self.config_path.with_name(f".{self.config_path.name}.{secrets.token_hex(6)}.tmp")
+            try:
+                temporary.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                os.replace(temporary, self.config_path)
+            finally:
+                temporary.unlink(missing_ok=True)
+            self.config = document
+        return self.network_settings()
+
+    def network_cluster_summary(self, project_slug: str) -> dict[str, Any]:
+        slug = normalize_project_slug(project_slug)
+        path = project_network_dir(self.root, slug) / "network.json"
+        if not path.exists():
+            return {"ready": False, "clusters": []}
+        try:
+            stat = path.stat()
+            key = (stat.st_mtime_ns, stat.st_size)
+            cached = self.network_summary_cache.get(slug)
+            if cached and cached[0] == key:
+                return cached[1]
+            payload = read_json(path)
+            raw_clusters = payload.get("clusters") or []
+            raw_names = payload.get("cluster_names") or {}
+            if not isinstance(raw_names, dict):
+                raw_names = {}
+            clusters: list[dict[str, Any]] = []
+            for item in raw_clusters if isinstance(raw_clusters, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    cluster_id = int(item.get("cluster_id"))
+                    size = max(0, int(item.get("size") or 0))
+                except (TypeError, ValueError):
+                    continue
+                named = raw_names.get(str(cluster_id), raw_names.get(cluster_id, {}))
+                if not isinstance(named, dict):
+                    named = {}
+                name = str(named.get("short_name") or item.get("label") or f"Cluster {cluster_id + 1}").strip()
+                clusters.append({"cluster_id": cluster_id, "name": name[:160], "size": size})
+            clusters.sort(key=lambda item: item["cluster_id"])
+            built_weights = payload.get("layer_weights") if isinstance(payload.get("layer_weights"), dict) else {}
+            provenance = payload.get("provenance") if isinstance(payload.get("provenance"), dict) else {}
+            summary = {
+                "ready": True,
+                "clusters": clusters,
+                "built_weights": {
+                    key: float(value)
+                    for key, value in built_weights.items()
+                    if key in NETWORK_WEIGHT_KEYS and isinstance(value, (int, float)) and math.isfinite(float(value))
+                },
+                "built_resolution": provenance.get("clustering_resolution"),
+            }
+            self.network_summary_cache[slug] = (key, summary)
+            return summary
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return {"ready": True, "clusters": [], "warning": "Cluster summary could not be read"}
 
     @staticmethod
     def _provider_error_search_text(error: str | None) -> str:
@@ -939,7 +1232,7 @@ class FolioSortApp:
         slug = normalize_project_slug(project_slug)
         network_json = project_network_dir(self.root, slug) / "network.json"
         if not network_json.exists():
-            raise FileNotFoundError(f"Literature Network has not been generated for project {slug}")
+            raise FileNotFoundError(f"Multiplex Network has not been generated for project {slug}")
         python = Path(os.environ.get("REVIEW_PYTHON") or (self.root / ".venv" / "bin" / "python"))
         script = self.root / "scripts" / "17_name_clusters.py"
         cmd = [str(python), str(script), "--project", slug]
@@ -967,7 +1260,7 @@ class FolioSortApp:
         slug = normalize_project_slug(project_slug)
         network_json = project_network_dir(self.root, slug) / "network.json"
         if not network_json.exists():
-            raise FileNotFoundError(f"Literature Network has not been generated for project {slug}")
+            raise FileNotFoundError(f"Multiplex Network has not been generated for project {slug}")
         allowed = {
             "citation", "semantic", "claim", "property", "method",
             "keyword", "keyword_semantic", "bibliographic_coupling",
@@ -1010,18 +1303,27 @@ class FolioSortApp:
                 result["cluster_naming_warnings"] = [f"{type(exc).__name__}: {exc}"]
         return result
 
-    def start_pipeline(self, project_slug: str) -> tuple[bool, str]:
+    def start_owned_process(self, project_slug: str, *, script_name: str, kind: str) -> tuple[bool, str]:
         slug = normalize_project_slug(project_slug)
         if self.pipeline_running():
             return False, "Process is already running."
-        # Ensure the project exists before launching a long-running child.
+        if kind not in {"analysis", "network", "ocr"}:
+            raise ValueError("Unsupported process kind")
         conn = self.db()
         try:
             name = project_name(conn, slug)
         finally:
             conn.close()
+        source = (self.root / "scripts" / script_name).resolve()
+        if not source.is_file() or source.parent != (self.root / "scripts").resolve():
+            raise FileNotFoundError(f"Process script is unavailable: {script_name}")
+        # Bash reads script files lazily. Run a fixed snapshot so installing an
+        # update while a long Process is active cannot splice old and new bytes.
+        snapshot = self.process_snapshot_dir / f"{source.stem}.{secrets.token_hex(8)}.sh"
+        snapshot.write_bytes(source.read_bytes())
+        snapshot.chmod(0o700)
         proc = subprocess.Popen(
-            [str(self.root / "scripts" / "run_review_pipeline.sh")],
+            [str(snapshot)],
             cwd=str(self.root),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -1035,17 +1337,55 @@ class FolioSortApp:
         )
         self.pipeline_pid_file.write_text(str(proc.pid) + "\n", encoding="utf-8")
         self.pipeline_project_file.write_text(slug + "\n", encoding="utf-8")
+        self.process_kind_file.write_text(kind + "\n", encoding="utf-8")
 
         def cleanup() -> None:
-            proc.wait()
+            returncode = proc.wait()
             try:
                 if self.pipeline_pid_file.exists() and self.pipeline_pid_file.read_text().strip() == str(proc.pid):
                     self.pipeline_pid_file.unlink(missing_ok=True)
+                    self.pipeline_project_file.unlink(missing_ok=True)
+                    self.process_kind_file.unlink(missing_ok=True)
             except OSError:
                 pass
+            snapshot.unlink(missing_ok=True)
+            if returncode != 0:
+                self.append_log_marker(f"{kind} process exited with status {returncode}")
 
         threading.Thread(target=cleanup, daemon=True).start()
+        return True, name
+
+    def start_pipeline(self, project_slug: str) -> tuple[bool, str]:
+        started, name = self.start_owned_process(
+            project_slug, script_name="run_review_pipeline.sh", kind="analysis"
+        )
+        if not started:
+            return False, name
         return True, f"Process started for project: {name}. Existing analysis is reused; only this project's graphs are rebuilt."
+
+    def start_network_rebuild(self, project_slug: str) -> tuple[bool, str]:
+        started, name = self.start_owned_process(
+            project_slug, script_name="rebuild_network.sh", kind="network"
+        )
+        if not started:
+            return False, name
+        return True, f"Multiplex Network rebuild started for project: {name}. Full paper analysis is not being run."
+
+    def start_ocr(self, project_slug: str) -> tuple[bool, str]:
+        status = self.ocr_status(project_slug)
+        if not status["available"]:
+            return False, "OCR dependencies are not installed. OCRmyPDF and English/Japanese Tesseract data are required."
+        if not status["blocked_count"]:
+            return False, "No OCR-blocked papers were found in this project."
+        started, name = self.start_owned_process(
+            project_slug, script_name="run_ocr_blocked.sh", kind="ocr"
+        )
+        if not started:
+            return False, name
+        return True, (
+            f"OCR started for {status['blocked_count']} blocked paper(s) in {name}. "
+            "Original PDFs will be preserved; only successful OCR derivatives continue through analysis."
+        )
 
     def stop_pipeline(self, grace_seconds: float = 8.0) -> tuple[bool, str]:
         pid = self.owned_pipeline_pid()
@@ -1079,7 +1419,7 @@ class FolioSortApp:
 
     def start_curation(self) -> str:
         port = int((self.config.get("curation") or {}).get("feedback_port", 8765))
-        expected_version = f"{__version__}-security-hardening"
+        expected_version = f"{__version__}-validation-review-v4"
         old_server_running = False
         try:
             import urllib.request
@@ -1119,10 +1459,14 @@ class Handler(BaseHTTPRequestHandler):
         if is_loopback_http_url(origin, self.server.server_port):
             self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        allow_same_origin_frame = bool(getattr(self, "_allow_same_origin_frame", False))
+        self.send_header(
+            "Content-Security-Policy",
+            "frame-ancestors 'self'" if allow_same_origin_frame else "frame-ancestors 'none'",
+        )
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Frame-Options", "SAMEORIGIN" if allow_same_origin_frame else "DENY")
         super().end_headers()
 
     def read_json_body(self, max_bytes: int, missing_message: str) -> dict[str, Any]:
@@ -1206,6 +1550,7 @@ class Handler(BaseHTTPRequestHandler):
             slug = self.project_from_query(parsed)
             running_slug = APP.running_project_slug()
             process_running = APP.pipeline_running()
+            process_kind = APP.running_process_kind() if process_running else None
             projects = APP.projects()
             current_project_row = next((p for p in projects if p.get("project_slug") == slug), {})
             network_path = project_network_dir(APP.root, slug) / "network.html"
@@ -1218,12 +1563,26 @@ class Handler(BaseHTTPRequestHandler):
                     network_stale = network_path.stat().st_mtime < updated.timestamp()
                 except Exception:
                     network_stale = False
+            cluster_summary = APP.network_cluster_summary(slug)
+            network_settings = APP.network_settings()
+            built_weights = cluster_summary.get("built_weights") or {}
+            if built_weights and any(
+                abs(float(built_weights.get(key, -1.0)) - float(value)) > 1e-9
+                for key, value in network_settings["weights"].items()
+            ):
+                network_stale = True
+            built_resolution = cluster_summary.get("built_resolution")
+            if isinstance(built_resolution, (int, float)) and abs(
+                float(built_resolution) - float(network_settings["resolution"])
+            ) > 1e-9:
+                network_stale = True
             self.send_json({
                 "pipeline_running": process_running,
                 "pipeline_stoppable": APP.owned_pipeline_pid() is not None,
+                "process_kind": process_kind,
                 "running_project": running_slug,
                 "running_project_name": APP.project_name(running_slug) if running_slug else None,
-                "process_estimate": APP.process_estimate(running_slug or slug) if process_running else None,
+                "process_estimate": APP.process_estimate(running_slug or slug) if process_running and process_kind == "analysis" else None,
                 "project_slug": slug,
                 "project_name": APP.project_name(slug),
                 "projects": projects,
@@ -1231,6 +1590,10 @@ class Handler(BaseHTTPRequestHandler):
                 "memory_count": APP.memory_count(slug),
                 "network_ready": network_path.exists(),
                 "network_stale": network_stale,
+                "network_revision": network_path.stat().st_mtime_ns if network_path.exists() else None,
+                "network_clusters": cluster_summary,
+                "network_settings": network_settings,
+                "ocr_status": APP.ocr_status(slug),
                 "knowledge_ready": (project_knowledge_dir(APP.root, slug) / "knowledge.html").exists(),
                 "raw_pdfs": APP.project_raw_files(slug),
                 "log_tail": APP.log_tail(),
@@ -1251,6 +1614,13 @@ class Handler(BaseHTTPRequestHandler):
                 "issues": APP.reference_issues(slug),
             }); return
         if parsed.path == "/network":
+            slug = self.project_from_query(parsed)
+            self.send_response(302)
+            self.send_header("Location", f"/?view=network&project={urllib.parse.quote(slug, safe='')}")
+            self.end_headers()
+            return
+        if parsed.path == "/network-content":
+            self._allow_same_origin_frame = True
             slug = self.project_from_query(parsed); self.serve_file(project_network_dir(APP.root, slug) / "network.html", "text/html; charset=utf-8"); return
         if parsed.path == "/knowledge":
             slug = self.project_from_query(parsed); self.serve_file(project_knowledge_dir(APP.root, slug) / "knowledge.html", "text/html; charset=utf-8"); return
@@ -1265,6 +1635,14 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed_origin():
             self.send_json({"error": "cross-origin request denied"}, 403); return
         try:
+            if parsed.path == "/api/network_settings":
+                body = self.read_json_body(65536, "A network settings request body is required")
+                settings = APP.save_network_settings(body)
+                self.send_json({
+                    "ok": True,
+                    "settings": settings,
+                    "message": "Network settings saved. They will be used by the next Multiplex Network build.",
+                }); return
             if parsed.path == "/api/network/name_clusters":
                 slug = self.project_from_query(parsed)
                 body = self.read_json_body(1024 * 1024, "A JSON cluster-membership request body is required")
@@ -1374,6 +1752,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "saved": saved, "message": f"Added {len(saved)} PDF(s) to {APP.project_name(slug)}. Press Analyze to update this project."}); return
             if parsed.path == "/api/analyze":
                 slug = self.project_from_query(parsed); started,msg=APP.start_pipeline(slug); self.send_json({"ok": True, "started": started, "message": msg}); return
+            if parsed.path == "/api/rebuild_network":
+                slug = self.project_from_query(parsed); started,msg=APP.start_network_rebuild(slug); self.send_json({"ok": True, "started": started, "message": msg}); return
+            if parsed.path == "/api/run_ocr":
+                slug = self.project_from_query(parsed); started,msg=APP.start_ocr(slug); self.send_json({"ok": True, "started": started, "message": msg}); return
             if parsed.path == "/api/stop_pipeline":
                 stopped,msg=APP.stop_pipeline(); self.send_json({"ok": True, "stopped": stopped, "message": msg}); return
             if parsed.path == "/api/open_pdf":

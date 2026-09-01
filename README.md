@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/13ray0914/FolioSort/actions/workflows/ci.yml/badge.svg)](https://github.com/13ray0914/FolioSort/actions/workflows/ci.yml)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.3.1-8b5cf6.svg)](https://github.com/13ray0914/FolioSort/releases)
+[![Version](https://img.shields.io/badge/version-4.3.2-8b5cf6.svg)](https://github.com/13ray0914/FolioSort/releases)
 
 FolioSort is a local-first, evidence-traceable literature review workspace. It turns a collection of scientific PDFs into structured claims, measurements, review reports, literature networks, and a scientific knowledge graph while preserving links back to the source sentences and visual evidence.
 
@@ -92,6 +92,15 @@ The Qwen weights and llama.cpp binary are not installed by the FolioSort Python 
 ## Install with pip
 
 FolioSort is installable directly from its Git repository. Use a dedicated virtual environment inside WSL/Linux; the Windows-native Python runtime is not supported because the service launchers use POSIX process and locking facilities.
+
+Install the local OCR engine and English/Japanese language data if image-only PDFs must be processed:
+
+```bash
+sudo apt update
+sudo apt install ocrmypdf tesseract-ocr-eng tesseract-ocr-jpn
+```
+
+The **Run OCR blocked papers** button creates derived searchable PDFs in `data/ocr_pdfs/`; canonical source PDFs are never overwritten. Only successfully OCR-processed papers are sent through the remaining resumable stages.
 
 Before initialization, create a free [OpenAlex account and API key](https://openalex.org/settings/api). OpenAlex's keyless daily budget is intended only for casual use and can stop a multi-paper metadata update with `429 Too Many Requests`; a free key raises the daily budget. See the official [OpenAlex authentication and rate-limit guide](https://help.openalex.org/api/authentication/).
 
@@ -205,7 +214,9 @@ Completed stages are reused when their input, prompt, schema, model, and configu
 
 ## Graph interfaces
 
-The Literature Network combines citation, semantic, claim, property, method, keyword, and bibliographic-coupling layers. Leiden clustering always uses the complete selected layers; display sparsification affects only canvas rendering.
+The Literature Network combines citation, semantic, claim, property, method, keyword, and bibliographic-coupling layers. Leiden clustering always uses the complete selected layers; display sparsification affects only canvas rendering. The saved layout first arranges papers inside each Leiden community, then separates community centroids so cluster boundaries remain visible. Search results can be highlighted as a group—for example, every paper matching an author query—without changing clustering.
+
+`review_required` is an automatic validation flag, not a failed analysis. Open the Curation Editor, review errors before warnings, correct or reject affected claims, and record a separate human decision. Automatic validation reports remain unchanged as an audit record; an approved human decision is shown separately in the network.
 
 The Scientific Knowledge Graph connects papers to claims, properties, methods, systems, measurements, and visual evidence. Its progressive expansion and Fast/Balanced/Full modes keep large graphs interactive without deleting scientific data from the export.
 
