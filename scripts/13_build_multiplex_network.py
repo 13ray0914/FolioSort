@@ -50,9 +50,11 @@ from lib.pipeline_common import (
     stable_json_hash,
     write_json,
 )
+from lib.citation_styles import format_citations, plain_text
 from lib.v4_common import normalize_doi, normalize_openalex_id, normalize_title
 from lib.projects import ensure_project_schema, normalize_project_slug, project_name, project_network_dir, project_rows
 from lib.network_runtime import LAYER_COLORS, compute_layout_positions
+from lib.claim_ranking import rank_representative_claims
 from lib.web_security import html_script_json
 from foliosort import __version__
 
@@ -660,13 +662,12 @@ html,body,#network{background:var(--network-page);color:var(--network-text)}#sid
   <div class="muted"><b>Project:</b> __PROJECT_LABEL__</div>
 
   <details class="section" data-section="find">
-    <summary><span>Find paper and cluster</span><span class="sectionHint">search · sort · focus</span></summary>
+    <summary><span>Find paper</span><span class="sectionHint">search · sort · focus</span></summary>
     <div class="sectionBody">
       <div class="paperToolbar"><input id="paperQuery" type="search" placeholder="Search author, year, title, journal, DOI, filename, P-ID…"><select id="paperSort"><option value="year_asc" selected>Year: oldest first</option><option value="year_desc">Year: newest first</option><option value="author_asc">First author: A–Z</option><option value="title_asc">Title: A–Z</option></select></div>
       <select id="paperSearch" class="paperSearchBox" size="8"></select>
       <div class="highlightActions"><button id="highlightMatches" class="primary">Highlight all matches</button><button id="clearHighlights" class="secondary">Clear highlights</button></div>
       <div id="highlightInfo" class="help">Search is live. Select one result, or highlight all matching authors/titles. Ctrl/Cmd-click graph nodes to add individual papers.</div>
-      <label>Cluster</label><select id="clusterFilter"></select>
       <div class="row"><button id="fitBtn">Fit</button><button id="relaxBtn" title="Gently reduce node overlap without forcing clusters apart">Relax layout</button></div>
       <button id="resetBtn" class="secondary">Reset view and clusters</button>
     </div>
@@ -712,16 +713,23 @@ html,body,#network{background:var(--network-page);color:var(--network-text)}#sid
 
   <details class="section" data-section="clusters">
     <summary><span>Clusters</span><span class="sectionHint">names · rationale</span></summary>
-    <div class="sectionBody"><div id="legend"></div><div id="clusterNarrative" class="help" style="margin-top:10px"></div></div>
+    <div class="sectionBody">
+      <select id="clusterFilter" hidden aria-hidden="true"></select>
+      <button id="allClustersBtn" class="secondary">All clusters</button>
+      <div id="legend"></div><div id="clusterNarrative" class="help" style="margin-top:10px"></div>
+    </div>
   </details>
 
   <details class="section" data-section="clusterPapers">
-    <summary><span>Selected cluster papers</span><span class="sectionHint">text · CSV · JSON · PDFs</span></summary>
+    <summary><span>Selected cluster papers</span><span class="sectionHint">references · CSV · JSON · PDFs</span></summary>
     <div class="sectionBody">
-      <div class="help">Select a cluster in “Find paper and cluster” or click a cluster legend. The complete list is shown as plain text. PDF export creates a local ZIP containing every original PDF plus TXT/CSV manifests.</div>
-      <div class="downloadRow"><button id="copyClusterList" class="compact">Copy text</button><button id="downloadClusterTxt" class="compact">Download TXT</button><button id="downloadClusterCsv" class="compact">Download CSV</button><button id="downloadClusterJson" class="compact">Download dossier JSON</button><button id="downloadClusterPdfs" class="compact pdfExport" style="grid-column:1/-1">Download all PDFs (.zip)</button></div>
+      <label for="citationStyle">Citation style</label>
+      <select id="citationStyle"><option value="acs">ACS</option><option value="rsc">RSC</option><option value="wiley">Wiley</option><option value="nature">Nature</option><option value="science">Science</option></select>
+      <button id="downloadAllClustersMd" class="primary">Download all clusters dossier (.md)</button>
+      <div class="help">The all-cluster dossier is a single ChatGPT-ready Markdown file containing cluster explanations, paper metadata, and ranked representative claims.</div>
+      <div class="help" style="margin-top:7px">Select a cluster in “Clusters”. The preview, copied list, bibliography, CSV, JSON, and PDF ZIP manifests use the citation style selected here.</div>
+      <div class="downloadRow"><button id="copyClusterList" class="compact">Copy references</button><button id="downloadClusterBibliography" class="compact">Download bibliography (.md)</button><button id="downloadClusterCsv" class="compact">Download CSV</button><button id="downloadClusterJson" class="compact">Download dossier JSON</button><button id="downloadClusterPdfs" class="compact pdfExport" style="grid-column:1/-1">Download all PDFs (.zip)</button></div>
       <textarea id="clusterPaperText" class="clusterTextArea" readonly placeholder="Select a cluster to show its paper list."></textarea>
-      <div id="clusterPaperList" class="clusterPaperList"><div class="muted" style="padding:9px">Select a cluster.</div></div>
     </div>
   </details>
 
@@ -836,15 +844,21 @@ function clusterAI(cid){return currentClusterNames[String(cid)]||currentClusterN
 function clusterDisplayName(c){const ai=clusterAI(c.cluster_id);return ai?.short_name||c.label||`cluster ${Number(c.cluster_id)+1}`;}
 function clusterPaperRows(cid){return Object.values(nodeMeta).filter(n=>Number(currentMembership[n.paper_id])===Number(cid)).sort((a,b)=>paperYear(a)-paperYear(b)||(a.display_label||'').localeCompare(b.display_label||'')||(a.title||'').localeCompare(b.title||''));}
 function clusterBaseName(cid){const c=currentClusters.find(x=>Number(x.cluster_id)===Number(cid));return `C${Number(cid)+1}_${String((clusterAI(cid)||{}).short_name||c?.label||'cluster').replace(/[^0-9A-Za-z._-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,80)}`;}
-function clusterText(cid){const c=currentClusters.find(x=>Number(x.cluster_id)===Number(cid)),ai=clusterAI(cid),rows=clusterPaperRows(cid);const header=[`C${Number(cid)+1}: ${(ai||{}).short_name||c?.label||''}`,`Technical label: ${(ai||{}).technical_label||c?.label||''}`,`Papers: ${rows.length}`,''];const body=rows.map((n,i)=>`${i+1}. ${n.year||'?'} | ${authorText(n.authors)||n.display_label||n.paper_id} | ${n.title||'(untitled)'} | ${n.journal||''} | ${n.doi||''} | ${n.paper_id}`);return header.concat(body).join('\n');}
+function citationStyle(){return document.getElementById('citationStyle')?.value||'acs';}
+function citationStyleLabel(style=citationStyle()){return({acs:'ACS',rsc:'RSC',wiley:'Wiley',nature:'Nature',science:'Science'})[style]||style.toUpperCase();}
+function citationFor(n,style=citationStyle()){return(n.formatted_citations||{})[style]||`${authorText(n.authors)||n.paper_id}. ${n.title||'(untitled)'}. ${n.journal||''} ${n.year||''}. ${n.doi?`https://doi.org/${n.doi}`:''}`.replace(/\s+/g,' ').trim();}
+function clusterText(cid){const c=currentClusters.find(x=>Number(x.cluster_id)===Number(cid)),ai=clusterAI(cid),rows=clusterPaperRows(cid),style=citationStyle();const header=[`C${Number(cid)+1}: ${(ai||{}).short_name||c?.label||''}`,`Technical label: ${(ai||{}).technical_label||c?.label||''}`,`Citation style: ${citationStyleLabel(style)}`,`Papers: ${rows.length}`,''];const body=rows.map((n,i)=>`${i+1}. ${citationFor(n,style)} [${n.paper_id}]`);return header.concat(body).join('\n');}
 function csvCell(v){const s=String(v??'');return `"${s.replace(/"/g,'""')}"`;}
 function downloadBlob(filename,text,type='text/plain;charset=utf-8'){const blob=new Blob([text],{type});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),800);}
-function renderClusterPaperList(){const box=document.getElementById('clusterPaperList');const textBox=document.getElementById('clusterPaperText');const raw=cf.value;if(raw==='all'){box.innerHTML='<div class="muted" style="padding:9px">Select a cluster to display its complete text list.</div>';textBox.value='';return;}const cid=Number(raw),rows=clusterPaperRows(cid);textBox.value=clusterText(cid);box.innerHTML=rows.map((n,i)=>`<div class="clusterPaperRow"><div><b>${i+1}. ${esc(n.display_label||n.paper_id)}</b> <span class="muted">${esc(n.paper_id)}</span></div><div class="clusterPaperTitle">${esc(n.title||'(untitled)')}</div><div class="muted">${esc(authorText(n.authors))}${n.journal?` · ${esc(n.journal)}`:''}${n.doi?` · ${esc(n.doi)}`:''}</div></div>`).join('')||'<div class="muted" style="padding:9px">No papers in this cluster.</div>'; }
+function renderClusterPaperList(){const textBox=document.getElementById('clusterPaperText');const raw=cf.value;if(raw==='all'){textBox.value='';return;}textBox.value=clusterText(Number(raw));}
 async function copyClusterList(){if(cf.value==='all'){alert('Select a cluster first.');return;}const text=clusterText(Number(cf.value));try{await navigator.clipboard.writeText(text);document.getElementById('status').textContent='Cluster paper list copied to clipboard.';}catch(_){const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();}}
-function downloadClusterTxt(){if(cf.value==='all'){alert('Select a cluster first.');return;}const cid=Number(cf.value);downloadBlob(clusterBaseName(cid)+'_papers.txt',clusterText(cid)+'\n','text/plain;charset=utf-8');}
-async function downloadClusterPdfs(){if(cf.value==='all'){alert('Select a cluster first.');return;}const cid=Number(cf.value),rows=clusterPaperRows(cid),c=currentClusters.find(x=>Number(x.cluster_id)===cid),ai=clusterAI(cid),btn=document.getElementById('downloadClusterPdfs');if(!rows.length){alert('This cluster contains no papers.');return;}btn.disabled=true;const old=btn.textContent;btn.textContent=`Preparing ${rows.length} PDFs…`;document.getElementById('status').textContent=`Creating a ZIP for ${rows.length} original PDFs…`;try{const response=await fetch(`${API_BASE}/api/network/cluster_pdfs?project=${encodeURIComponent(projectSlug)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paper_ids:rows.map(n=>n.paper_id),cluster_name:ai?.short_name||c?.label||`cluster_${cid+1}`,technical_label:ai?.technical_label||c?.label||''})});const result=await response.json();if(!response.ok)throw new Error(result.error||response.statusText);const a=document.createElement('a');a.href=new URL(result.download_url,API_BASE).toString();a.download=result.filename||clusterBaseName(cid)+'_PDFs.zip';document.body.appendChild(a);a.click();a.remove();document.getElementById('status').textContent=`Downloading ${rows.length} original PDFs as a ZIP…`;setTimeout(()=>{document.getElementById('status').textContent=`Prepared ${rows.length} cluster PDFs.`;},1600);}catch(error){document.getElementById('status').textContent='Cluster PDF export failed.';alert('Could not download the cluster PDFs. Make sure FolioSort is running and every original PDF is present.\n\n'+error);}finally{btn.disabled=false;btn.textContent=old;}}
-function downloadClusterCsv(){if(cf.value==='all'){alert('Select a cluster first.');return;}const cid=Number(cf.value),rows=clusterPaperRows(cid);const head=['paper_id','year','authors','title','journal','doi','original_filename','cluster_id','cluster_name'];const c=currentClusters.find(x=>Number(x.cluster_id)===cid),name=(clusterAI(cid)||{}).short_name||c?.label||'';const lines=[head.map(csvCell).join(',')].concat(rows.map(n=>[n.paper_id,n.year||'',authorText(n.authors),n.title||'',n.journal||'',n.doi||'',n.original_filename||'',cid+1,name].map(csvCell).join(',')));downloadBlob(clusterBaseName(cid)+'_papers.csv','\ufeff'+lines.join('\r\n'),'text/csv;charset=utf-8');}
-function downloadClusterJson(){if(cf.value==='all'){alert('Select a cluster first.');return;}const cid=Number(cf.value),c=currentClusters.find(x=>Number(x.cluster_id)===cid),ai=clusterAI(cid),rows=clusterPaperRows(cid);const payload={project:projectSlug,network_signature:networkSignature,cluster_id:cid+1,cluster_name:ai?.short_name||c?.label||'',technical_label:ai?.technical_label||c?.label||'',review_section_title:ai?.review_section_title||'',rationale:ai?.rationale||'',selected_layers:[...currentClusteringLayers],resolution:currentClusteringResolution,papers:rows};downloadBlob(clusterBaseName(cid)+'_dossier.json',JSON.stringify(payload,null,2)+'\n','application/json;charset=utf-8');}
+function downloadClusterBibliography(){if(cf.value==='all'){alert('Select a cluster first.');return;}const cid=Number(cf.value),style=citationStyle(),rows=clusterPaperRows(cid),lines=[`# ${clusterBaseName(cid)} bibliography`,'',`Citation style: ${citationStyleLabel(style)}`,'',...rows.map((n,i)=>`${i+1}. ${citationFor(n,style)} [${n.paper_id}]`)];downloadBlob(`${clusterBaseName(cid)}_${style}_bibliography.md`,lines.join('\n')+'\n','text/markdown;charset=utf-8');}
+async function downloadClusterPdfs(){if(cf.value==='all'){alert('Select a cluster first.');return;}const cid=Number(cf.value),rows=clusterPaperRows(cid),c=currentClusters.find(x=>Number(x.cluster_id)===cid),ai=clusterAI(cid),btn=document.getElementById('downloadClusterPdfs'),style=citationStyle();if(!rows.length){alert('This cluster contains no papers.');return;}btn.disabled=true;const old=btn.textContent;btn.textContent=`Preparing ${rows.length} PDFs…`;document.getElementById('status').textContent=`Creating a ZIP for ${rows.length} original PDFs…`;try{const response=await fetch(`${API_BASE}/api/network/cluster_pdfs?project=${encodeURIComponent(projectSlug)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paper_ids:rows.map(n=>n.paper_id),cluster_name:ai?.short_name||c?.label||`cluster_${cid+1}`,technical_label:ai?.technical_label||c?.label||'',citation_style:style})});const result=await response.json();if(!response.ok)throw new Error(result.error||response.statusText);const a=document.createElement('a');a.href=new URL(result.download_url,API_BASE).toString();a.download=result.filename||clusterBaseName(cid)+`_${style}_PDFs.zip`;document.body.appendChild(a);a.click();a.remove();document.getElementById('status').textContent=`Downloading ${rows.length} original PDFs as a ZIP…`;setTimeout(()=>{document.getElementById('status').textContent=`Prepared ${rows.length} cluster PDFs.`;},1600);}catch(error){document.getElementById('status').textContent='Cluster PDF export failed.';alert('Could not download the cluster PDFs. Make sure FolioSort is running and every original PDF is present.\n\n'+error);}finally{btn.disabled=false;btn.textContent=old;}}
+function downloadClusterCsv(){if(cf.value==='all'){alert('Select a cluster first.');return;}const cid=Number(cf.value),rows=clusterPaperRows(cid),style=citationStyle();const head=['paper_id','year','authors','title','journal','doi','original_filename','cluster_id','cluster_name','citation_style','formatted_reference'];const c=currentClusters.find(x=>Number(x.cluster_id)===cid),name=(clusterAI(cid)||{}).short_name||c?.label||'';const lines=[head.map(csvCell).join(',')].concat(rows.map(n=>[n.paper_id,n.year||'',authorText(n.authors),n.title||'',n.journal||'',n.doi||'',n.original_filename||'',cid+1,name,citationStyleLabel(style),citationFor(n,style)].map(csvCell).join(',')));downloadBlob(clusterBaseName(cid)+`_${style}_papers.csv`,'\ufeff'+lines.join('\r\n'),'text/csv;charset=utf-8');}
+function downloadClusterJson(){if(cf.value==='all'){alert('Select a cluster first.');return;}const cid=Number(cf.value),c=currentClusters.find(x=>Number(x.cluster_id)===cid),ai=clusterAI(cid),rows=clusterPaperRows(cid),style=citationStyle();const payload={project:projectSlug,network_signature:networkSignature,cluster_id:cid+1,cluster_name:ai?.short_name||c?.label||'',technical_label:ai?.technical_label||c?.label||'',review_section_title:ai?.review_section_title||'',rationale:ai?.rationale||'',citation_style:citationStyleLabel(style),selected_layers:[...currentClusteringLayers],resolution:currentClusteringResolution,papers:rows.map(n=>({...n,formatted_reference:citationFor(n,style)}))};downloadBlob(clusterBaseName(cid)+`_${style}_dossier.json`,JSON.stringify(payload,null,2)+'\n','application/json;charset=utf-8');}
+function markdownText(value){return String(value??'').replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();}
+function allClustersMarkdown(){const style=citationStyle(),lines=['# FolioSort all-cluster review dossier','',`Project: ${projectSlug}`,`Generated: ${new Date().toISOString()}`,`Citation style: ${citationStyleLabel(style)}`,`Clusters: ${currentClusters.length}`,`Papers: ${Object.keys(nodeMeta).length}`,'','This file contains algorithmic cluster assignments and extracted evidence. Verify important statements against the original PDFs before citing them.',''];for(const c of [...currentClusters].sort((a,b)=>a.cluster_id-b.cluster_id)){const cid=Number(c.cluster_id),ai=clusterAI(cid),rows=clusterPaperRows(cid);lines.push(`## C${cid+1}: ${markdownText(ai?.short_name||c.label||'Cluster')}`,'',`- Suggested review section: ${markdownText(ai?.review_section_title||'')||'Not available'}`,`- Technical label: ${markdownText(ai?.technical_label||c.label||'')||'Not available'}`,`- Rationale: ${markdownText(ai?.rationale||'')||'Not available'}`,`- Papers: ${rows.length}`);if((ai?.distinguishing_features||[]).length)lines.push(`- Distinguishing features: ${(ai.distinguishing_features||[]).map(markdownText).join('; ')}`);lines.push('');for(const n of rows){lines.push(`### ${n.paper_id}: ${markdownText(n.title||'(untitled)')}`,'',`- Reference: ${citationFor(n,style)}`,`- Year: ${n.year||'Unknown'}`,`- Journal: ${markdownText(n.journal||'')||'Unknown'}`,`- DOI: ${n.doi||'Not available'}`,`- Validation: ${n.validation_status||'Unknown'}`,`- Central question: ${markdownText(n.central_question||'')||'Not available'}`,`- Properties: ${(n.properties||[]).map(markdownText).join('; ')||'Not available'}`,`- Methods: ${(n.methods||[]).map(markdownText).join('; ')||'Not available'}`,`- Keywords: ${(n.keywords||[]).map(markdownText).join('; ')||'Not available'}`,'- Ranked representative claims:');const claims=((n.representative_claims||[]).length?n.representative_claims:(n.claims||[])).slice(0,6);if(claims.length)claims.forEach((claim,index)=>lines.push(`  ${index+1}. ${markdownText(typeof claim==='string'?claim:claim.statement)}`));else lines.push('  - None available');lines.push('');}}return lines.join('\n')+'\n';}
+function downloadAllClustersMarkdown(){const style=citationStyle();downloadBlob(`${projectSlug}_all_clusters_${style}_dossier.md`,allClustersMarkdown(),'text/markdown;charset=utf-8');}
 function renderClusterNarrative(){
   const box=document.getElementById('clusterNarrative');const raw=cf.value;
   if(raw==='all'){box.innerHTML='<span class="muted">Select a cluster to see the AI naming rationale. Technical frequency labels remain available underneath each AI name.</span>';return;}
@@ -861,7 +875,11 @@ function renderClusterUI(){
   cf.innerHTML='<option value="all">All clusters</option>'+currentClusters.map(c=>`<option value="${c.cluster_id}">C${c.cluster_id+1}: ${esc(clusterDisplayName(c))} (${c.size})</option>`).join('');
   if([...cf.options].some(o=>o.value===previous))cf.value=previous;
   document.getElementById('legend').innerHTML=currentClusters.map(c=>{const ai=clusterAI(c.cluster_id);return `<div class="legend clickable" data-cluster-id="${c.cluster_id}"><span class="dot" style="background:${clusterColors[c.cluster_id]}"></span><span><b>C${c.cluster_id+1}: ${esc(clusterDisplayName(c))}</b> (${c.size})${ai?`<br><span class="muted">technical: ${esc(ai.technical_label||c.label||'')}</span>`:''}</span></div>`}).join('');
-  document.querySelectorAll('[data-cluster-id]').forEach(el=>el.onclick=()=>{cf.value=el.dataset.clusterId;applyClusterFilter();openAccordion('clusterPapers');network.fit({animation:{duration:180}});});
+  document.querySelectorAll('[data-cluster-id]').forEach(el=>el.onclick=()=>{
+    const side=document.getElementById('side'),scrollTop=side.scrollTop;
+    cf.value=el.dataset.clusterId;applyClusterFilter();network.fit({animation:{duration:180}});
+    side.scrollTop=scrollTop;requestAnimationFrame(()=>{side.scrollTop=scrollTop;});
+  });
   renderClusterNarrative();renderClusterPaperList();
 }
 function applyClusterFilter(){const cluster=cf.value;const updates=baseNodeArray.map(n=>({id:n.id,hidden:cluster!=='all'&&String(currentMembership[n.id])!==cluster}));nodes.update(updates);renderClusterNarrative();renderClusterPaperList();}
@@ -938,7 +956,7 @@ function restoreCachedRecluster(){
   try{const raw=localStorage.getItem(`foliosort.network.recluster.${projectSlug}`);if(!raw)return false;const r=JSON.parse(raw);if(r.network_signature!==networkSignature)return false;currentMembership={...r.membership};currentClusters=r.clusters||[];currentClusterNames=r.cluster_names||{};currentClusteringLayers=[...(r.selected_layers||baseClusteringLayers)];currentClusteringResolution=Number(r.resolution??1.0);clusterColors=newClusterColors(currentClusters);const updates=[];for(const [id,pos] of Object.entries(r.positions||{}))updates.push({id,x:Number(pos.x||0),y:Number(pos.y||0)});if(updates.length)nodes.update(updates);renderClusterUI();return true;}catch(_){return false;}
 }
 
-function showDetail(id){const n=nodeMeta[id];if(!n)return;openAccordion('selectedPaper');const props=(n.properties||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const methods=(n.methods||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const keywords=(n.keywords||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const claims=(n.claims||[]).slice(0,6).map(x=>`<div class="claim">• ${esc(x)}</div>`).join('');const human=n.human_review?`<br>Human validation review: ${esc(n.human_review)}`:'';document.getElementById('detail').innerHTML=`<div><b>${esc(n.display_label||n.paper_id)}</b> <span class="muted">(${esc(n.paper_id)})</span></div><div style="font-size:14px;margin:8px 0"><b>${esc(n.title||'(untitled)')}</b></div><div class="muted">${esc(n.journal||'')}<br>${esc(n.doi||'')}<br>${esc(n.original_filename||n.source_relpath||'')}<br>Cluster C${Number(n.cluster_id)+1}: ${esc((clusterAI(Number(n.cluster_id))||{}).short_name||n.cluster_label||'')}<br>Automatic validation: ${esc(n.validation_status||'')}${human}</div><button class="openpdf" id="openPdfBtn">Open original PDF</button><button id="openCurBtn" class="secondary">Open in Curation Editor</button><div style="margin-top:10px"><b>Properties</b><br>${props||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Methods</b><br>${methods||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Keywords</b><br>${keywords||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Representative claims</b>${claims||'<div class="muted">none</div>'}</div>`;document.getElementById('openPdfBtn').onclick=()=>openOriginalPdf(id);document.getElementById('openCurBtn').onclick=()=>openCuration(id);}
+function showDetail(id){const n=nodeMeta[id];if(!n)return;openAccordion('selectedPaper');const props=(n.properties||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const methods=(n.methods||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const keywords=(n.keywords||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('');const ranked=(n.representative_claims||[]).length?n.representative_claims:(n.claims||[]);const claims=ranked.slice(0,6).map((x,i)=>`<div class="claim"><b>${i+1}.</b> ${esc(typeof x==='string'?x:(x.statement||''))}</div>`).join('');const human=n.human_review?`<br>Human validation review: ${esc(n.human_review)}`:'';document.getElementById('detail').innerHTML=`<div><b>${esc(n.display_label||n.paper_id)}</b> <span class="muted">(${esc(n.paper_id)})</span></div><div style="font-size:14px;margin:8px 0"><b>${esc(n.title||'(untitled)')}</b></div><div class="muted">${esc(n.journal||'')}<br>${esc(n.doi||'')}<br>${esc(n.original_filename||n.source_relpath||'')}<br>Cluster C${Number(n.cluster_id)+1}: ${esc((clusterAI(Number(n.cluster_id))||{}).short_name||n.cluster_label||'')}<br>Automatic validation: ${esc(n.validation_status||'')}${human}</div><button class="openpdf" id="openPdfBtn">Open original PDF</button><button id="openCurBtn" class="secondary">Open in Curation Editor</button><div style="margin-top:10px"><b>Properties</b><br>${props||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Methods</b><br>${methods||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Keywords</b><br>${keywords||'<span class="muted">none</span>'}</div><div style="margin-top:8px"><b>Representative claims</b><div class="muted" style="margin:3px 0 5px">Ranked by Abstract, Conclusion, title and whole-paper-summary relevance, study origin, evidence support, and diversity.</div>${claims||'<div class="muted">none</div>'}</div>`;document.getElementById('openPdfBtn').onclick=()=>openOriginalPdf(id);document.getElementById('openCurBtn').onclick=()=>openCuration(id);}
 async function openOriginalPdf(id){const n=nodeMeta[id];if(!n)return;const status=document.getElementById('status');status.textContent=`Opening ${n.display_label||id}…`;try{const r=await fetch(`${API_BASE}/api/open_pdf?id=${encodeURIComponent(id)}`,{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);status.textContent=`Opened ${n.display_label||id}`;}catch(e){status.textContent='PDF opener is not running. Start FolioSort.';alert('Could not open the original PDF. Start FolioSort first.\n\n'+e);}}
 async function openCuration(id){try{await fetch(`${API_BASE}/api/start_curation`,{method:'POST'});window.open(`http://127.0.0.1:8765/?paper=${encodeURIComponent(id)}&theme=${encodeURIComponent(currentNetworkTheme)}`,'_blank');}catch(e){alert('Start FolioSort before opening the curation editor.\n\n'+e);}}
 
@@ -965,8 +983,10 @@ document.querySelectorAll('[data-rel]').forEach(x=>x.addEventListener('change',s
 document.getElementById('performanceMode').addEventListener('change',scheduleView);
 document.getElementById('resolution').addEventListener('input',e=>{const value=Number(e.target.value);const v=value.toFixed(2);document.getElementById('resolutionBox').textContent=v;document.getElementById('resolutionValue').textContent=v;updateResolutionHelp(value);});
 document.getElementById('reclusterBtn').onclick=recluster;document.getElementById('restoreBtn').onclick=restoreBase;document.getElementById('nameClustersBtn').onclick=()=>nameCurrentClusters(false);document.getElementById('forceNameClustersBtn').onclick=()=>nameCurrentClusters(true);
-cf.addEventListener('change',()=>{applyClusterFilter();if(cf.value!=='all')openAccordion('clusterPapers');network.fit({animation:{duration:180}});});
-document.getElementById('copyClusterList').onclick=copyClusterList;document.getElementById('downloadClusterTxt').onclick=downloadClusterTxt;document.getElementById('downloadClusterCsv').onclick=downloadClusterCsv;document.getElementById('downloadClusterJson').onclick=downloadClusterJson;document.getElementById('downloadClusterPdfs').onclick=downloadClusterPdfs;setupSplitter();setupAccordions();setupRightDragTransform();
+cf.addEventListener('change',()=>{applyClusterFilter();network.fit({animation:{duration:180}});});
+document.getElementById('allClustersBtn').onclick=()=>{cf.value='all';applyClusterFilter();network.fit({animation:{duration:180}});};
+document.getElementById('citationStyle').addEventListener('change',renderClusterPaperList);document.getElementById('downloadAllClustersMd').onclick=downloadAllClustersMarkdown;
+document.getElementById('copyClusterList').onclick=copyClusterList;document.getElementById('downloadClusterBibliography').onclick=downloadClusterBibliography;document.getElementById('downloadClusterCsv').onclick=downloadClusterCsv;document.getElementById('downloadClusterJson').onclick=downloadClusterJson;document.getElementById('downloadClusterPdfs').onclick=downloadClusterPdfs;setupSplitter();setupAccordions();setupRightDragTransform();
 paperQuery.addEventListener('input',refreshPaperSearch);paperSort.addEventListener('change',refreshPaperSearch);search.addEventListener('change',()=>{if(!search.value)return;nodes.update({id:search.value,hidden:false});highlightPapers([search.value],{fit:false});network.focus(search.value,{scale:1.65,animation:true});});document.getElementById('highlightMatches').onclick=()=>{const q=(paperQuery.value||'').trim();if(!q){document.getElementById('highlightInfo').textContent='Enter an author, title, year, journal, DOI, filename, or paper ID first.';paperQuery.focus();return}highlightPapers(searchMatches.map(n=>n.paper_id));};document.getElementById('clearHighlights').onclick=()=>{network.unselectAll();document.getElementById('highlightInfo').textContent='Highlights cleared. Search or select papers to highlight them again.';};
 document.getElementById('fitBtn').onclick=()=>network.fit({animation:{duration:180}});document.getElementById('relaxBtn').onclick=relaxLayout;
 document.getElementById('resetBtn').onclick=()=>{document.querySelectorAll('[data-rel]').forEach(x=>x.checked=true);document.getElementById('performanceMode').value='balanced';document.getElementById('resolution').value='1.00';document.getElementById('resolutionBox').textContent='1.00';document.getElementById('resolutionValue').textContent='1.00';updateResolutionHelp(1.0);restoreBase();};
@@ -1069,15 +1089,39 @@ def main() -> None:
         methods = sorted(normalized_set(inventory.get("methods", []), "method_normalized", "method_raw"))
         keywords = sorted(normalized_set(inventory.get("keywords", []), "keyword_normalized", "keyword_raw"))
         claim_text, claims = claim_profile(evidence)
+        title = plain_text(canonical.get("title") or row["title"] or paper_id)
+        representative_claims = rank_representative_claims(
+            evidence,
+            paper,
+            title=title,
+            memory=memory,
+        )
         authors = canonical.get("authors") or (paper.get("metadata") or {}).get("authors") or []
         year = canonical.get("year") if canonical.get("year") not in (None, "") else row["year"]
+        citation_record = {
+            "authors": authors,
+            "title": title,
+            "year": year,
+            "journal": canonical.get("journal") or row["journal"],
+            "journal_abbreviation": canonical.get("journal_abbreviation"),
+            "doi": canonical.get("doi") or row["doi"],
+            "volume": canonical.get("volume"),
+            "issue": canonical.get("issue"),
+            "pages": canonical.get("pages") or canonical.get("page"),
+            "article_number": canonical.get("article_number"),
+        }
         nodes[paper_id] = {
             "paper_id": paper_id,
             "display_label": paper_display_label(authors, year, paper_id),
             "authors": authors,
-            "title": canonical.get("title") or row["title"] or paper_id,
+            "title": title,
             "year": year,
             "journal": canonical.get("journal") or row["journal"],
+            "journal_abbreviation": canonical.get("journal_abbreviation"),
+            "volume": canonical.get("volume"),
+            "issue": canonical.get("issue"),
+            "pages": canonical.get("pages") or canonical.get("page"),
+            "article_number": canonical.get("article_number"),
             "doi": canonical.get("doi") or row["doi"],
             "openalex_id": canonical.get("openalex_id"),
             "source_relpath": row["source_relpath"],
@@ -1088,6 +1132,8 @@ def main() -> None:
             "methods": methods,
             "keywords": keywords,
             "claims": claims,
+            "representative_claims": representative_claims,
+            "formatted_citations": format_citations(citation_record),
             "claim_profile_text": claim_text,
             "central_question": memory.get("central_question"),
         }

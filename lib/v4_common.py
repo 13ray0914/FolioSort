@@ -246,13 +246,26 @@ def crossref_candidate(item: dict[str, Any]) -> dict[str, Any]:
     authors = []
     for author in item.get("author") or []:
         full = normalize_ws(" ".join(x for x in [author.get("given"), author.get("family")] if x))
-        authors.append({"full_name": full or None, "surname": author.get("family")})
+        authors.append({
+            "full_name": full or None,
+            "given": author.get("given"),
+            "forename": author.get("given"),
+            "family": author.get("family"),
+            "surname": author.get("family"),
+            "orcid": author.get("ORCID"),
+        })
     return {
         "provider": "crossref",
         "title": (item.get("title") or [None])[0],
         "doi": normalize_doi(item.get("DOI")),
         "year": crossref_year(item),
         "journal": (item.get("container-title") or [None])[0],
+        "journal_abbreviation": (item.get("short-container-title") or [None])[0],
+        "volume": item.get("volume"),
+        "issue": item.get("issue"),
+        "pages": item.get("page"),
+        "article_number": item.get("article-number"),
+        "issn": item.get("ISSN") or [],
         "authors": authors,
         "type": item.get("type"),
         "publisher": item.get("publisher"),
@@ -265,15 +278,38 @@ def openalex_candidate(item: dict[str, Any]) -> dict[str, Any]:
     authors = []
     for authorship in item.get("authorships") or []:
         author = authorship.get("author") or {}
-        authors.append({"full_name": author.get("display_name"), "surname": surname(author.get("display_name"))})
+        full = normalize_ws(author.get("display_name") or authorship.get("raw_author_name") or "")
+        name_parts = full.rsplit(" ", 1)
+        family = name_parts[-1] if name_parts else ""
+        given = name_parts[0] if len(name_parts) > 1 else ""
+        authors.append({
+            "full_name": full or None,
+            "given": given or None,
+            "forename": given or None,
+            "family": family or None,
+            "surname": family or None,
+            "orcid": author.get("orcid"),
+        })
     location = item.get("primary_location") or {}
     source = location.get("source") or {}
+    biblio = item.get("biblio") or {}
+    first_page = biblio.get("first_page")
+    last_page = biblio.get("last_page")
+    pages = first_page
+    if first_page and last_page and str(last_page) != str(first_page):
+        pages = f"{first_page}-{last_page}"
     return {
         "provider": "openalex",
         "title": item.get("title") or item.get("display_name"),
         "doi": normalize_doi(item.get("doi")),
         "year": item.get("publication_year"),
         "journal": source.get("display_name"),
+        "journal_abbreviation": source.get("abbreviated_title"),
+        "volume": biblio.get("volume"),
+        "issue": biblio.get("issue"),
+        "pages": pages,
+        "article_number": biblio.get("article_number"),
+        "issn": source.get("issn") or [],
         "authors": authors,
         "openalex_id": normalize_openalex_id(item.get("id")),
         "referenced_works": [normalize_openalex_id(x) for x in item.get("referenced_works") or []],
@@ -421,7 +457,6 @@ class CrossrefClient:
         params: dict[str, Any] = {
             "query.bibliographic": bibliographic,
             "rows": int(rows or self.cfg.get("rows", 5)),
-            "select": "DOI,title,author,published-print,published-online,published,issued,created,container-title,type,publisher,URL,score",
         }
         if self.mailto:
             params["mailto"] = self.mailto

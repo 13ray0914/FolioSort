@@ -10,7 +10,7 @@ from pathlib import Path
 if importlib.util.find_spec("requests") is None:
     sys.modules["requests"] = types.SimpleNamespace(Response=object)
 
-from lib.v4_common import ensure_v4_schema, valid_doi
+from lib.v4_common import crossref_candidate, ensure_v4_schema, openalex_candidate, valid_doi
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +36,35 @@ class ReferenceResolutionTests(unittest.TestCase):
         ensure_v4_schema(conn)
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         self.assertIn("reference_doi_overrides_v4", tables)
+
+    def test_crossref_candidate_retains_complete_bibliographic_fields(self) -> None:
+        candidate = crossref_candidate({
+            "DOI": "10.1000/example",
+            "title": ["H<sub>2</sub> study"],
+            "container-title": ["Journal of Examples"],
+            "short-container-title": ["J. Ex."],
+            "author": [{"given": "Ada M.", "family": "Lovelace"}],
+            "volume": "12",
+            "issue": "3",
+            "page": "101-109",
+        })
+        self.assertEqual(candidate["authors"][0]["given"], "Ada M.")
+        self.assertEqual(candidate["journal_abbreviation"], "J. Ex.")
+        self.assertEqual(candidate["volume"], "12")
+        self.assertEqual(candidate["issue"], "3")
+        self.assertEqual(candidate["pages"], "101-109")
+
+    def test_openalex_candidate_retains_biblio_fields(self) -> None:
+        candidate = openalex_candidate({
+            "id": "https://openalex.org/W1",
+            "title": "Example",
+            "authorships": [{"author": {"display_name": "Ada Lovelace"}}],
+            "primary_location": {"source": {"display_name": "Journal of Examples", "abbreviated_title": "J. Ex."}},
+            "biblio": {"volume": "12", "issue": "3", "first_page": "101", "last_page": "109"},
+        })
+        self.assertEqual(candidate["authors"][0]["given"], "Ada")
+        self.assertEqual(candidate["journal_abbreviation"], "J. Ex.")
+        self.assertEqual(candidate["pages"], "101-109")
 
     def test_oversized_ocr_text_is_not_sent_as_a_provider_query(self) -> None:
         resolver = load_resolver_module()

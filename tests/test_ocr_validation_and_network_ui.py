@@ -70,6 +70,51 @@ class NetworkInteractionTests(unittest.TestCase):
         self.assertIn("borderWidthSelected:5", graph)
         self.assertIn("Ctrl/Cmd-click", graph)
 
+    def test_cluster_controls_are_grouped_under_clusters(self) -> None:
+        graph = read("scripts/13_build_multiplex_network.py")
+        find_section = graph[graph.index('data-section="find"'):graph.index('data-section="layers"')]
+        clusters_section = graph[graph.index('data-section="clusters"'):graph.index('data-section="clusterPapers"')]
+        cluster_papers_section = graph[graph.index('data-section="clusterPapers"'):graph.index('data-section="selectedPaper"')]
+
+        self.assertIn("<span>Find paper</span>", find_section)
+        self.assertNotIn("Find paper and cluster", graph)
+        self.assertNotIn('id="clusterFilter"', find_section)
+        self.assertIn('id="clusterFilter" hidden', clusters_section)
+        self.assertIn('id="allClustersBtn"', clusters_section)
+        self.assertIn("document.getElementById('allClustersBtn').onclick", graph)
+        self.assertNotIn('id="downloadAllClustersMd"', clusters_section)
+        self.assertIn('id="downloadAllClustersMd"', cluster_papers_section)
+        self.assertIn("function allClustersMarkdown", graph)
+        self.assertIn("ranked representative claims", graph)
+        self.assertNotIn('id="citationStyle"', clusters_section)
+        self.assertIn('id="citationStyle"', cluster_papers_section)
+        for style in ["acs", "rsc", "wiley", "nature", "science"]:
+            self.assertIn(f'<option value="{style}">', graph)
+        self.assertIn('id="downloadClusterBibliography"', graph)
+        self.assertNotIn('id="downloadClusterTxt"', graph)
+        self.assertNotIn("function downloadClusterTxt", graph)
+        self.assertNotIn('id="clusterPaperList"', cluster_papers_section)
+        self.assertNotIn("document.getElementById('clusterPaperList')", graph)
+        self.assertNotIn("openAccordion('clusterPapers')", graph)
+        self.assertIn("side.scrollTop=scrollTop", graph)
+
+    def test_pdf_zip_manifest_uses_the_selected_citation_style(self) -> None:
+        graph = read("scripts/13_build_multiplex_network.py")
+        dashboard = read("scripts/review_app_server.py")
+
+        self.assertIn("citation_style:style", graph)
+        self.assertIn("citation_style=str(body.get(\"citation_style\") or \"acs\")", dashboard)
+        self.assertIn("formatted_reference = format_citation(row, citation_style)", dashboard)
+        self.assertIn('"citation_style", "formatted_reference"', dashboard)
+
+    def test_representative_claims_are_ranked_and_explained(self) -> None:
+        graph = read("scripts/13_build_multiplex_network.py")
+
+        self.assertIn("rank_representative_claims", graph)
+        self.assertIn('"representative_claims": representative_claims', graph)
+        self.assertIn("Ranked by Abstract, Conclusion", graph)
+        self.assertIn("<b>${i+1}.</b>", graph)
+
     def test_curated_metadata_rebuild_is_fast_and_live_network_refreshes(self) -> None:
         curation = read("scripts/curation_server.py")
         dashboard = read("scripts/review_app_server.py")

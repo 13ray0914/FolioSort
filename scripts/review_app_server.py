@@ -43,6 +43,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from lib.pipeline_common import connect_db, get_paths, load_config, make_text_chunks, read_json
+from lib.citation_styles import CITATION_STYLES, format_citation, plain_text
 from lib.process_estimate import (
     blocked_paper_ids,
     estimate_remaining,
@@ -663,10 +664,16 @@ class FolioSortApp:
                 elif isinstance(author, dict):
                     value = str(
                         author.get("name")
+                        or author.get("full_name")
                         or author.get("display_name")
                         or author.get("raw")
                         or " ".join(
-                            x for x in [str(author.get("given") or "").strip(), str(author.get("family") or "").strip()] if x
+                            x
+                            for x in [
+                                str(author.get("given") or author.get("forename") or "").strip(),
+                                str(author.get("family") or author.get("surname") or "").strip(),
+                            ]
+                            if x
                         )
                     ).strip()
                 else:
@@ -693,9 +700,14 @@ class FolioSortApp:
         if not isinstance(canonical, dict):
             canonical = {}
         return {
-            "title": str(canonical.get("title") or "").strip(),
+            "title": plain_text(canonical.get("title")),
             "year": canonical.get("year"),
             "journal": str(canonical.get("journal") or "").strip(),
+            "journal_abbreviation": str(canonical.get("journal_abbreviation") or "").strip(),
+            "volume": str(canonical.get("volume") or "").strip(),
+            "issue": str(canonical.get("issue") or "").strip(),
+            "pages": str(canonical.get("pages") or canonical.get("page") or "").strip(),
+            "article_number": str(canonical.get("article_number") or "").strip(),
             "doi": str(canonical.get("doi") or "").strip(),
             "authors": self._authors_text(canonical.get("authors")),
         }
@@ -1102,8 +1114,12 @@ class FolioSortApp:
         paper_ids: list[str],
         cluster_name: str,
         cluster_label: str = "",
+        citation_style: str = "acs",
     ) -> tuple[Path, str]:
         slug = normalize_project_slug(project_slug)
+        citation_style = str(citation_style or "acs").strip().lower()
+        if citation_style not in CITATION_STYLES:
+            raise ValueError(f"Unsupported citation style: {citation_style}")
         requested = []
         seen: set[str] = set()
         for raw in paper_ids:
@@ -1137,18 +1153,22 @@ class FolioSortApp:
         downloads = self.root / "logs" / "downloads"
         downloads.mkdir(parents=True, exist_ok=True)
         base = self._safe_download_name(cluster_name or cluster_label, "cluster")
-        filename = f"{base}_PDFs.zip"
+        filename = f"{base}_{citation_style}_PDFs.zip"
         zip_path = downloads / f".{base}_{os.getpid()}_{time.time_ns()}.zip"
 
         text_lines = [
             f"Project: {self.project_name(slug)} ({slug})",
             f"Cluster: {cluster_name or cluster_label or 'cluster'}",
+            f"Citation style: {citation_style.upper()}",
             f"Papers: {len(rows)}",
             "",
         ]
         csv_buffer = io.StringIO(newline="")
         writer = csv.writer(csv_buffer)
-        writer.writerow(["paper_id", "year", "authors", "title", "journal", "doi", "original_filename"])
+        writer.writerow([
+            "paper_id", "year", "authors", "title", "journal", "doi", "original_filename",
+            "citation_style", "formatted_reference",
+        ])
 
         try:
             with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
@@ -1161,10 +1181,12 @@ class FolioSortApp:
                     journal = str(row.get("journal") or "")
                     doi = str(row.get("doi") or "")
                     original = str(row.get("original_filename") or "")
-                    text_lines.append(
-                        f"{index}. {year} | {authors or paper_id} | {title} | {journal} | {doi} | {paper_id}"
-                    )
-                    writer.writerow([paper_id, year if year != "?" else "", authors, title, journal, doi, original])
+                    formatted_reference = format_citation(row, citation_style)
+                    text_lines.append(f"{index}. {formatted_reference} [{paper_id}]")
+                    writer.writerow([
+                        paper_id, year if year != "?" else "", authors, title, journal, doi, original,
+                        citation_style.upper(), formatted_reference,
+                    ])
                     pdf_path = self.resolve_pdf(paper_id)
                     pdf_name = self._safe_download_name(pdf_path.stem, paper_id) + pdf_path.suffix.lower()
                     arcname = f"PDFs/{paper_id}_{pdf_name}"
@@ -1662,12 +1684,14 @@ class Handler(BaseHTTPRequestHandler):
                     paper_ids=paper_ids,
                     cluster_name=str(body.get("cluster_name") or ""),
                     cluster_label=str(body.get("technical_label") or ""),
+                    citation_style=str(body.get("citation_style") or "acs"),
                 )
                 token = APP.register_download(zip_path, filename)
                 self.send_json({
                     "ok": True,
                     "filename": filename,
                     "paper_count": len(paper_ids),
+                    "citation_style": str(body.get("citation_style") or "acs").lower(),
                     "download_url": f"/api/download?token={urllib.parse.quote(token, safe='')}",
                 }); return
             if parsed.path == "/api/project_membership":

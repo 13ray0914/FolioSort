@@ -34,7 +34,7 @@ from lib.v4_common import (
 )
 
 STAGE = "metadata_enrichment_v4"
-SCRIPT_VERSION = "metadata-v4.0"
+SCRIPT_VERSION = "metadata-v4.1-bibliography"
 
 
 def accepted(
@@ -178,6 +178,12 @@ def main() -> None:
                 "year": (preferred or {}).get("year") or query["year"],
                 "journal": (preferred or {}).get("journal") or query["journal"],
                 "authors": (preferred or {}).get("authors") or query["authors"],
+                "journal_abbreviation": (preferred or {}).get("journal_abbreviation"),
+                "volume": (preferred or {}).get("volume"),
+                "issue": (preferred or {}).get("issue"),
+                "pages": (preferred or {}).get("pages"),
+                "article_number": (preferred or {}).get("article_number"),
+                "issn": (preferred or {}).get("issn") or [],
                 "openalex_id": (oa_best or {}).get("openalex_id") if oa_ok else None,
                 "referenced_works": (oa_best or {}).get("referenced_works", []) if oa_ok else [],
                 "cited_by_count": (oa_best or {}).get("cited_by_count") if oa_ok else None,
@@ -194,6 +200,11 @@ def main() -> None:
                     "doi": candidate.get("doi"),
                     "year": candidate.get("year"),
                     "journal": candidate.get("journal"),
+                    "journal_abbreviation": candidate.get("journal_abbreviation"),
+                    "volume": candidate.get("volume"),
+                    "issue": candidate.get("issue"),
+                    "pages": candidate.get("pages"),
+                    "article_number": candidate.get("article_number"),
                     "openalex_id": candidate.get("openalex_id"),
                     "score": score,
                 }
