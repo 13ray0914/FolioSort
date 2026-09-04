@@ -662,7 +662,7 @@ html,body,#network{background:var(--network-page);color:var(--network-text)}#sid
 <div id="network"></div><div id="splitter" role="separator" aria-orientation="vertical" tabindex="0" title="Drag to resize the network / controls split. Double-click to reset. Use Left/Right arrow keys for fine adjustment."></div><div id="status">Loading network…</div>
 <div id="side">
   <h2>Multiplex Network</h2>
-  <div class="muted"><b>Project:</b> __PROJECT_LABEL__</div>
+  <div class="muted"><b>Project:</b> <span id="projectName">__PROJECT_LABEL__</span></div>
 
   <details class="section" data-section="find">
     <summary><span>Find paper</span><span class="sectionHint">search · sort · focus</span></summary>
@@ -1065,7 +1065,7 @@ document.getElementById('fitBtn').onclick=()=>network.fit({animation:{duration:1
 document.getElementById('resetBtn').onclick=()=>{setHistoryActive(false);document.querySelectorAll('[data-rel]').forEach(x=>x.checked=true);document.getElementById('performanceMode').value='balanced';document.getElementById('resolution').value='1.00';document.getElementById('resolutionBox').textContent='1.00';document.getElementById('resolutionValue').textContent='1.00';updateResolutionHelp(1.0);restoreBase();};
 network.on('click',p=>{if(p.nodes.length)showDetail(p.nodes[0]);});network.on('selectNode',p=>{document.getElementById('highlightInfo').innerHTML=`<span class="highlightKey">${p.nodes.length} paper${p.nodes.length===1?'':'s'} highlighted</span> · Ctrl/Cmd-click to add or remove nodes.`;});network.on('doubleClick',p=>{if(p.nodes.length)openOriginalPdf(p.nodes[0]);});
 let publishedNetworkRevision=null,revisionCheckBusy=false;
-async function watchPublishedNetwork(){if(revisionCheckBusy)return;revisionCheckBusy=true;try{const response=await fetch(`${API_BASE}/api/status?project=${encodeURIComponent(projectSlug)}`,{cache:'no-store'});if(!response.ok)return;const result=await response.json();const revision=result.network_revision==null?'':String(result.network_revision);if(!revision)return;if(publishedNetworkRevision===null){publishedNetworkRevision=revision;return}if(revision!==publishedNetworkRevision){document.getElementById('status').textContent='Curated paper information updated. Refreshing Multiplex Network…';location.reload();}}catch(_error){}finally{revisionCheckBusy=false;}}
+async function watchPublishedNetwork(){if(revisionCheckBusy)return;revisionCheckBusy=true;try{const response=await fetch(`${API_BASE}/api/status?project=${encodeURIComponent(projectSlug)}`,{cache:'no-store'});if(!response.ok)return;const result=await response.json();const projectName=document.getElementById('projectName');if(projectName&&result.project_name)projectName.textContent=String(result.project_name);const revision=result.network_revision==null?'':String(result.network_revision);if(!revision)return;if(publishedNetworkRevision===null){publishedNetworkRevision=revision;return}if(revision!==publishedNetworkRevision){document.getElementById('status').textContent='Curated paper information updated. Refreshing Multiplex Network…';location.reload();}}catch(_error){}finally{revisionCheckBusy=false;}}
 watchPublishedNetwork();setInterval(watchPublishedNetwork,2500);
 </script>
 </body></html>'''

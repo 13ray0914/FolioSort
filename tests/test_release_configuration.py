@@ -97,6 +97,8 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertIn('id="exportNetworkImage"', source)
         self.assertIn("async function exportNetworkImage()", source)
         self.assertIn("exportNetwork.canvas.frame.canvas", source)
+        self.assertIn('id="projectName"', source)
+        self.assertIn("projectName.textContent=String(result.project_name)", source)
 
     def test_curation_editor_can_fetch_doi_metadata(self) -> None:
         source = self.read("scripts/curation_server.py")
