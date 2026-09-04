@@ -15,6 +15,7 @@ if _BOOT_PY.exists() and _BootstrapPath(_bootstrap_sys.prefix).resolve() != _BOO
     _bootstrap_os.execv(str(_BOOT_PY), [str(_BOOT_PY), str(_BootstrapPath(__file__).resolve()), *_bootstrap_sys.argv[1:]])
 
 import argparse
+import base64
 import csv
 import fcntl
 import io
@@ -1246,7 +1247,34 @@ class FolioSortApp:
     def open_windows_file(self, path: Path) -> None:
         try:
             win = subprocess.check_output(["wslpath", "-w", str(path)], text=True).strip()
-            subprocess.Popen(["explorer.exe", win], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            encoded_path = base64.b64encode(win.encode("utf-8")).decode("ascii")
+            powershell_command = (
+                "$ErrorActionPreference = 'Stop'; "
+                f"$path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded_path}')); "
+                "Start-Process -FilePath $path"
+            )
+            encoded_command = base64.b64encode(powershell_command.encode("utf-16-le")).decode("ascii")
+            completed = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-EncodedCommand",
+                    encoded_command,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=15,
+                check=False,
+            )
+            if completed.returncode != 0:
+                raw_detail = completed.stderr or completed.stdout
+                detail = (
+                    raw_detail.decode("utf-8", errors="replace").strip()
+                    if raw_detail
+                    else "Windows did not start the associated application"
+                )
+                raise RuntimeError(detail)
         except Exception as exc:
             raise RuntimeError(f"Could not open Windows PDF viewer: {exc}") from exc
 

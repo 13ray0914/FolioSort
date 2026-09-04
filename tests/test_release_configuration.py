@@ -72,11 +72,39 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertIn('"__EDGES__": html_script_json(', knowledge)
         self.assertNotIn('"__META__": json.dumps(', knowledge)
 
-    def test_network_sections_are_independently_expandable(self) -> None:
+    def test_network_sections_are_independently_expandable_and_exports_are_available(self) -> None:
         source = self.read("scripts/13_build_multiplex_network.py")
 
         self.assertIn("foliosort.network.openSections", source)
         self.assertNotIn("if(other!==details)other.open=false", source)
+        self.assertEqual(source.count('data-section="clusters"'), 1)
+        self.assertNotIn('data-section="recluster"', source)
+        self.assertNotIn('data-section="naming"', source)
+        self.assertIn('<summary><span>Export data</span>', source)
+        self.assertIn('.clusterTextArea{width:100%;box-sizing:border-box;', source)
+        self.assertNotIn('id="openPdfBtn"', source)
+        self.assertIn("network.on('doubleClick',p=>{if(p.nodes.length)openOriginalPdf(p.nodes[0]);});", source)
+        self.assertIn('id="historySlider"', source)
+        self.assertIn('id="playHistoryBtn"', source)
+        self.assertIn('data-section="viewSettings"', source)
+        self.assertLess(source.index('data-section="clusters"'), source.index('data-section="viewSettings"'))
+        self.assertLess(source.index('data-section="viewSettings"'), source.index('data-section="clusterPapers"'))
+        self.assertIn('id="nodeFontSize"', source)
+        self.assertIn('id="nodeFontFamily"', source)
+        self.assertIn('id="nodeSizeScale"', source)
+        self.assertIn('id="networkImageWidth"', source)
+        self.assertIn('id="networkImageHeight"', source)
+        self.assertIn('id="exportNetworkImage"', source)
+        self.assertIn("async function exportNetworkImage()", source)
+        self.assertIn("exportNetwork.canvas.frame.canvas", source)
+
+    def test_curation_editor_can_fetch_doi_metadata(self) -> None:
+        source = self.read("scripts/curation_server.py")
+
+        self.assertIn("<title>Curation Editor</title>", source)
+        self.assertIn("Fetch metadata from DOI", source)
+        self.assertIn("/api/metadata/fetch_doi", source)
+        self.assertIn("def metadata_from_doi", source)
 
     def test_knowledge_graph_uses_progressive_local_rendering(self) -> None:
         source = self.read("assets/knowledge_graph_template.html")
