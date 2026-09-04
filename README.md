@@ -8,6 +8,8 @@ FolioSort is a local-first, evidence-traceable literature review workspace. It t
 
 > [日本語README](README_JA.md) · [v4の詳細な日本語ガイド](README_V4_JA.md)
 
+<img width="1919" height="1059" alt="Image" src="https://github.com/user-attachments/assets/822d95df-2457-437b-b2f1-8b584214ec2a" />
+
 ## Why FolioSort?
 
 LLM-generated summaries are difficult to audit when their statements cannot be traced to the original paper. FolioSort assigns stable IDs to papers, sentences, figures, tables, equations, claims, and measurements so that a review statement can be traced in reverse:
