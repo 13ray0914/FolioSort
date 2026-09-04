@@ -209,7 +209,11 @@ On Windows, a desktop shortcut can be created once with:
 
 ## Running the process
 
-Place PDFs in the configured raw-PDF directory or add them through the dashboard. For a full project update, use the dashboard's **Analyze / Update Selected Project** button or run:
+Place PDFs in the configured raw-PDF directory or add them through the dashboard. For a full project update, use the dashboard's **Analyze / Update Selected Project** button
+
+<img width="1919" height="1059" alt="Image" src="https://github.com/user-attachments/assets/bfbfe460-95ef-42a7-977f-0c3f8b820f21" />
+
+or run:
 
 ```bash
 ./scripts/run_review_pipeline.sh
